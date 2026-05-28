@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+motor
+pydantic-settings
+python-multipart
+langchain
+langchain-openai
+langgraph
+httpx
+pypdf
+reportlab
+ollama
