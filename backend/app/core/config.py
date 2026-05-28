@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     SEARXNG_URL: str
     CAMOFOX_URL: str
     Ollama: str
+    SEARCH_NUM_RESULTS: int
 
     class Config:
         env_file = ".env"

@@ -4,8 +4,7 @@ from app.core.database import connect_db, close_db
 from app.api.v1 import jobs, resumes
 
 logging.basicConfig(
-    # level=logging.DEBUG,
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 

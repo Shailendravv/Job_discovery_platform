@@ -10,9 +10,9 @@ import json
 import logging
 from typing import List
 
-from app.agents.tools.web_search import web_search
 from app.agents.tools.skill_extraction import extract_skills_from_text
-from app.agents.tools.browse_jobs import browse_fetch, browse_extract
+from app.agents.tools.browse_jobs import browse_extract
+from app.agents.search_provider import provider
 from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
@@ -73,11 +73,9 @@ async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[di
     Search → browse each URL → extract fields → return enriched JobResult list.
     Prints debug logs for job_type and full JSON structure of each job.
     """
-    # log.debug(
-    #     "[workflow] starting search: %r (num_results=%d)", user_input, num_results
-    # )
-
-    raw_results = web_search(user_input, num_results=num_results)
+    log.debug("[workflow] starting search: %r (num_results=%d)", user_input, num_results)
+    raw_results = provider.search(user_input, num_results=num_results)
+    log.debug("[workflow] SearXNG returned %d raw results", len(raw_results))
 
     jobs: List[dict] = []
 
@@ -93,15 +91,23 @@ async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[di
 
         extracted: dict = {}
 
+        log.debug(
+            "[workflow] [%d/%d] processing url=%r title=%r",
+            idx + 1, len(raw_results), url, base_title,
+        )
+
         # ── Auto-browse: fetch + extract structured fields ──────────────────
         if url.startswith(("http://", "https://")):
-
+            log.debug("[workflow] [%d] fetching page via camofox: %r", idx + 1, url)
             try:
                 raw_json = browse_extract(url, JOB_EXTRACT_SCHEMA)
                 extracted = (
                     json.loads(raw_json) if isinstance(raw_json, str) else raw_json
                 )
-
+                log.debug(
+                    "[workflow] [%d] extract succeeded, keys=%s",
+                    idx + 1, list(extracted.keys()),
+                )
             except Exception as exc:
                 log.warning(
                     "[workflow] [%d] browse_extract failed (%s), falling back to snippet",
