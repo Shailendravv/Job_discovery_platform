@@ -253,6 +253,154 @@ Exports all tools for use by the workflow:
 - `browse_fetch`
 - `browse_extract`
 
+### Implementation: browse_jobs.py (example)
+
+Below is a minimal, readable implementation of the `browse_jobs` tool that the workflow uses. It is intentionally simple so a developer or AI can reproduce it from scratch.
+
+File: backend/app/agents/tools/browse_jobs.py
+
+```python
+import logging
+from typing import Optional
+
+import httpx
+
+log = logging.getLogger(__name__)
+
+from app.core.config import settings
+
+
+def _open_tab(client: httpx.Client, url: str) -> Optional[str]:
+  try:
+    resp = client.post(f"{settings.CAMOFOX_URL}/tabs/open", json={"url": url}, timeout=20.0)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("tabId")
+  except Exception as e:
+    log.warning("[browse] failed to open tab for %s: %s", url, e)
+    return None
+
+
+def _get_snapshot(client: httpx.Client, tab_id: str) -> Optional[str]:
+  try:
+    resp = client.get(f"{settings.CAMOFOX_URL}/tabs/{tab_id}/snapshot", timeout=20.0)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("snapshot", "")
+  except Exception as e:
+    log.warning("[browse] failed to get snapshot for tab %s: %s", tab_id, e)
+    return None
+
+
+def _close_tab(client: httpx.Client, tab_id: str) -> None:
+  try:
+    client.post(f"{settings.CAMOFOX_URL}/tabs/{tab_id}/close", timeout=5.0)
+  except Exception:
+    pass
+
+
+def browse_fetch(url: str, max_chars: int = 8000) -> str:
+  """Open the page in camofox and return a truncated accessibility snapshot."""
+  with httpx.Client() as client:
+    tab_id = _open_tab(client, url)
+    if not tab_id:
+      return ""
+
+    snapshot = _get_snapshot(client, tab_id) or ""
+    _close_tab(client, tab_id)
+
+  if len(snapshot) > max_chars:
+    return snapshot[:max_chars]
+  return snapshot
+
+
+def browse_extract(url: str, schema: dict, model_name: str = "llama3") -> str:
+  """Fetch page snapshot then call Ollama to extract structured JSON according to `schema`.
+
+  Returns a JSON string on success or raises on failure.
+  """
+  snapshot = browse_fetch(url)
+  if not snapshot:
+    raise RuntimeError("Failed to fetch page snapshot")
+
+  payload = {
+    "model": model_name,
+    "prompt": {
+      "instructions": "Extract the following fields as JSON matching the provided schema",
+      "snapshot": snapshot,
+      "schema": schema,
+    },
+    "format": "json",
+  }
+
+  try:
+    resp = httpx.post(f"{settings.OLLAMA_URL}/api/extract", json=payload, timeout=30.0)
+    resp.raise_for_status()
+    return resp.text
+  except Exception as e:
+    log.warning("[browse_extract] Ollama extraction failed for %s: %s", url, e)
+    raise
+
+```
+
+This example keeps responsibilities separate: `browse_fetch` handles camofox tab lifecycle and returns an accessibility snapshot; `browse_extract` sends that snapshot to the LLM with the JSON schema and returns the model's JSON output.
+
+### Implementation: job_mcp_browse_server.py (example)
+
+The MCP server exposes small tools that an LLM orchestrator can call directly. The example below wires the browse tools into an MCP toolset while also exposing a pure `_do_search` function similar to the search-only server described earlier.
+
+File: backend/app/agents/nodes/job_mcp_browse_server.py
+
+```python
+import logging
+import httpx
+from mcp.server.fastmcp import FastMCP
+
+from app.core.config import settings
+from app.agents.tools.browse_jobs import browse_fetch, browse_extract
+
+log = logging.getLogger(__name__)
+mcp = FastMCP("job-browse-server")
+
+
+@mcp.tool()
+def fetch(url: str) -> str:
+  """Open a page in camofox and return its accessibility snapshot."""
+  try:
+    snapshot = browse_fetch(url)
+    if not snapshot:
+      return f"Failed to fetch snapshot for {url}"
+    return snapshot
+  except Exception as e:
+    log.exception("[mcp:fetch] error fetching %s", url)
+    return f"Error: {e}"
+
+
+@mcp.tool()
+def extract(url: str, schema: dict, model_name: str | None = None) -> str:
+  """Open a page and extract structured fields using the LLM.
+
+  Returns the raw JSON string returned by the model.
+  """
+  model = model_name or settings.OLLAMA_MODEL
+  try:
+    extracted = browse_extract(url, schema, model_name=model)
+    return extracted
+  except Exception as e:
+    log.exception("[mcp:extract] extraction failed for %s", url)
+    return f"Error: {e}"
+
+
+if __name__ == "__main__":
+  mcp.run()
+
+```
+
+Notes:
+- The MCP server above is intentionally small: tools return raw strings so the orchestrating LLM can parse them. This mirrors the overall design in the repository and keeps the MCP surface simple.
+- In production you may want to add input validation, rate limiting, tab-reuse heuristics, and more robust timeout handling.
+
+
 ## MCP Search Integration
 
 ### Design Rationale

@@ -1,14 +1,22 @@
 """
 Unified job search workflow:
-  1. Search SearXNG for jobs (default 6 results)
-  2. Auto-browse each result URL via camofox (fetch tool)
-  3. Extract structured fields + job_type via Ollama (extract tool)
-  4. Print debug logs showing job_type and full JSON structure
+  1. Build targeted queries — respects explicit site: directives and freshness signals
+  2. Search SearXNG for jobs (default 6 results)
+  3. Auto-browse each result URL via camofox (fetch tool)
+  4. Extract structured fields + job_type via Ollama (extract tool)
+  5. Print debug logs showing job_type and full JSON structure
+
+Supported input formats from frontend:
+  • Plain query            "Python developer Delhi"
+  • Site-targeted          "Python developer site:linkedin.com"
+  • Company carrier page   "jobs at Google" / "careers google.com"
+  • Structured JSON        {"query": "...", "sites": ["naukri.com"], "fresh": true}
 """
 
 import json
 import logging
-from typing import List
+import re
+from typing import List, Optional
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
 from app.agents.tools.browse_jobs import browse_extract
@@ -17,7 +25,18 @@ from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
 
-# Schema used to extract structured fields from each job page
+# ── Known job portals (used when user doesn't specify a site) ─────────────────
+DEFAULT_JOB_SITES = [
+    "naukri.com",
+    "linkedin.com/jobs",
+    "apna.co",
+    "indeed.com",
+    "instahyre.com",
+    "shine.com",
+    "foundit.in",  # ex-monster India
+]
+
+# ── Schema used to extract structured fields from each job page ───────────────
 JOB_EXTRACT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -29,6 +48,10 @@ JOB_EXTRACT_SCHEMA = {
             "description": "Full job description or summary",
         },
         "salary": {"type": "string", "description": "Salary or compensation range"},
+        "posted_date": {
+            "type": "string",
+            "description": "When the job was posted, e.g. '2 days ago', '2024-06-01'",
+        },
         "skills": {
             "type": "array",
             "items": {"type": "string"},
@@ -41,16 +64,131 @@ JOB_EXTRACT_SCHEMA = {
                 "internship, freelance, remote, on-site, hybrid, unknown"
             ),
         },
+        "apply_url": {
+            "type": "string",
+            "description": "Direct URL to apply for the job, if different from the listing URL",
+        },
     },
 }
 
 
+# ── Input parsing ─────────────────────────────────────────────────────────────
+
+
+def _parse_user_input(user_input: str | dict) -> dict:
+    """
+    Normalise various frontend input formats into:
+      {
+        "query": str,
+        "sites": list[str],   # explicit site targets (may be empty)
+        "fresh": bool,        # request freshness filter
+        "company_careers": bool,  # user wants company career-page crawl
+      }
+    """
+    # Accept JSON dict from frontend
+    if isinstance(user_input, dict):
+        return {
+            "query": user_input.get("query", ""),
+            "sites": user_input.get("sites", []),
+            "fresh": bool(user_input.get("fresh", True)),
+            "company_careers": bool(user_input.get("company_careers", False)),
+        }
+
+    text = str(user_input).strip()
+
+    # Detect embedded JSON string
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+            return _parse_user_input(parsed)
+        except json.JSONDecodeError:
+            pass
+
+    sites: List[str] = []
+    fresh = True
+    company_careers = False
+
+    # Extract explicit site: directives  →  "jobs site:naukri.com site:apna.co"
+    site_matches = re.findall(r"site:(\S+)", text, re.IGNORECASE)
+    if site_matches:
+        sites = site_matches
+        text = re.sub(r"site:\S+", "", text, flags=re.IGNORECASE).strip()
+
+    # Detect career-page intent  →  "careers at google", "google.com/careers"
+    career_pattern = re.compile(
+        r"\b(careers?|career\s*page|hiring\s*page|job\s*openings?)\s+(?:at\s+)?(\S+)",
+        re.IGNORECASE,
+    )
+    m = career_pattern.search(text)
+    if m:
+        company_careers = True
+        company_hint = m.group(2).strip(".,/")
+        if "." not in company_hint:
+            # plain name → guess canonical domain
+            sites = [f"{company_hint.lower()}.com"]
+        else:
+            sites = [company_hint]
+        text = career_pattern.sub("", text).strip()
+
+    # Detect "latest / recent / new" keywords → already implies fresh
+    if re.search(r"\b(latest|recent|new|today|this\s+week)\b", text, re.IGNORECASE):
+        fresh = True
+        text = re.sub(
+            r"\b(latest|recent|new|today|this\s+week)\b", "", text, flags=re.IGNORECASE
+        ).strip()
+
+    return {
+        "query": text,
+        "sites": sites,
+        "fresh": fresh,
+        "company_careers": company_careers,
+    }
+
+
+# ── Query builder ─────────────────────────────────────────────────────────────
+
+
+def _build_queries(parsed: dict) -> List[str]:
+    """
+    Return a list of SearXNG query strings.
+
+    • If explicit sites given  → one query per site with site: operator
+    • If company_careers       → target <company>/careers or jobs.<company>
+    • Otherwise                → one query per default job portal
+    """
+    base = parsed["query"]
+    sites = parsed["sites"]
+    fresh_suffix = " after:2024-01-01" if parsed["fresh"] else ""
+    careers_mode = parsed["company_careers"]
+
+    queries: List[str] = []
+
+    if careers_mode and sites:
+        for site in sites:
+            domain = site.split("/")[0]  # strip path if any
+            queries.append(f"{base} site:{domain}/careers{fresh_suffix}")
+            queries.append(f"{base} site:{domain}/jobs{fresh_suffix}")
+        return queries
+
+    if sites:
+        for site in sites:
+            queries.append(f"{base} site:{site}{fresh_suffix}")
+        return queries
+
+    # Default: rotate through known job portals
+    for site in DEFAULT_JOB_SITES:
+        queries.append(f"{base} site:{site}{fresh_suffix}")
+
+    return queries
+
+
+# ── Job-type classifier ───────────────────────────────────────────────────────
+
+
 def _categorize_job_type(extracted: dict, description: str) -> str:
-    """Derive job_type from extracted data or fall back to keyword scan."""
     jt = (extracted.get("job_type") or "").strip().lower()
     if jt and jt != "unknown":
         return jt
-    # keyword fallback on description
     desc_lower = description.lower()
     for kw in (
         "internship",
@@ -68,14 +206,54 @@ def _categorize_job_type(extracted: dict, description: str) -> str:
     return "unknown"
 
 
-async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[dict]:
+# ── Main workflow ─────────────────────────────────────────────────────────────
+
+
+async def search_jobs_workflow(
+    user_input: str | dict,
+    num_results: int = 6,
+) -> List[dict]:
     """
-    Search → browse each URL → extract fields → return enriched JobResult list.
-    Prints debug logs for job_type and full JSON structure of each job.
+    Accepts plain text OR structured dict from the frontend.
+
+    Plain text examples:
+      "Python developer Delhi"
+      "Python developer site:linkedin.com site:naukri.com"
+      "latest React jobs site:apna.co"
+      "careers at Google"
+
+    Structured dict example:
+      {
+        "query": "Data Engineer",
+        "sites": ["naukri.com", "linkedin.com/jobs"],
+        "fresh": true,
+        "company_careers": false
+      }
     """
-    log.debug("[workflow] starting search: %r (num_results=%d)", user_input, num_results)
-    raw_results = provider.search(user_input, num_results=num_results)
-    log.debug("[workflow] SearXNG returned %d raw results", len(raw_results))
+    parsed = _parse_user_input(user_input)
+    log.debug("[workflow] parsed input: %s", parsed)
+
+    queries = _build_queries(parsed)
+    log.debug("[workflow] will run %d queries: %s", len(queries), queries)
+
+    # Collect raw results across all queries, de-duplicate by URL
+    seen_urls: set = set()
+    raw_results: List[dict] = []
+
+    for q in queries:
+        if len(raw_results) >= num_results * 2:
+            break
+        batch = provider.search(q, num_results=max(3, num_results // len(queries) + 1))
+        log.debug("[workflow] query=%r → %d results", q, len(batch))
+        for r in batch:
+            url = r.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                raw_results.append(r)
+
+    # Trim to requested count
+    raw_results = raw_results[:num_results]
+    log.info("[workflow] total unique results to process: %d", len(raw_results))
 
     jobs: List[dict] = []
 
@@ -93,10 +271,13 @@ async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[di
 
         log.debug(
             "[workflow] [%d/%d] processing url=%r title=%r",
-            idx + 1, len(raw_results), url, base_title,
+            idx + 1,
+            len(raw_results),
+            url,
+            base_title,
         )
 
-        # ── Auto-browse: fetch + extract structured fields ──────────────────
+        # ── Auto-browse: fetch + extract structured fields ───────────────────
         if url.startswith(("http://", "https://")):
             log.debug("[workflow] [%d] fetching page via camofox: %r", idx + 1, url)
             try:
@@ -106,7 +287,8 @@ async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[di
                 )
                 log.debug(
                     "[workflow] [%d] extract succeeded, keys=%s",
-                    idx + 1, list(extracted.keys()),
+                    idx + 1,
+                    list(extracted.keys()),
                 )
             except Exception as exc:
                 log.warning(
@@ -124,6 +306,10 @@ async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[di
         description = (extracted.get("description") or snippet).strip()
         skills = extracted.get("skills") or extract_skills_from_text(description)
         job_type = _categorize_job_type(extracted, description)
+        posted_date = (
+            extracted.get("posted_date") or result.get("publishedDate") or None
+        )
+        apply_url = extracted.get("apply_url") or url or None
 
         job = JobResult(
             title=title,
@@ -133,19 +319,23 @@ async def search_jobs_workflow(user_input: str, num_results: int = 6) -> List[di
             url=url or None,
             skills=skills,
             job_type=job_type,
+            posted_date=posted_date,
+            apply_url=apply_url,
         )
         job_dict = job.model_dump()
 
-        # ── Debug print: job_type + full JSON ───────────────────────────────
         log.info(
-            "[workflow] [%d] job_type=%r  title=%r  url=%r",
+            "[workflow] [%d] job_type=%r  title=%r  url=%r  posted=%r",
             idx + 1,
             job_type,
             title,
             url,
+            posted_date,
         )
         print(f"\n{'='*60}")
-        print(f"[JOB {idx+1}/{len(raw_results)}]  job_type={job_type!r}")
+        print(
+            f"[JOB {idx+1}/{len(raw_results)}]  job_type={job_type!r}  posted={posted_date!r}"
+        )
         print(json.dumps(job_dict, indent=2, ensure_ascii=False))
         print("=" * 60)
 

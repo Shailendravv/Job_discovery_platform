@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     Ollama: str
     SEARCH_NUM_RESULTS: int
     SETTLE_SECONDS: float = 1.5
-    MAX_SNAPSHOT_CHARS: int = 30000
+    MAX_SNAPSHOT_CHARS: int = 3000
     MODEL_NAME: str = "qwen3.5:2b"
     MODEL_TEMPERATURE: float = 0.1
 
