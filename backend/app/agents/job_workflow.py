@@ -17,14 +17,7 @@ from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
 
-# ── Backend config for targeting (not exposed to frontend) ───────────────────
-# Edit .env to change these values — no code changes needed.
-# SEARCH_SITES:     which job portals to query
-# SEARCH_FRESH:     whether to restrict to recent postings
-# SEARCH_CAREERS:   whether to target company career pages
-SEARCH_SITES = ["naukri.com", "linkedin.com/jobs", "apna.co", "indeed.com", "instahyre.com", "shine.com", "foundit.in"]
-SEARCH_FRESH = True
-SEARCH_CAREERS = False
+# ── Backend targeting config — all values read from settings (.env) ──────────
 
 # ── Schema used to extract structured fields from each job page ───────────────
 JOB_EXTRACT_SCHEMA = {
@@ -72,9 +65,9 @@ def _parse_user_input(user_input: str) -> dict:
     Returns: { query, sites, fresh, company_careers }
     """
     text = str(user_input).strip()
-    sites: List[str] = list(SEARCH_SITES)
-    fresh = SEARCH_FRESH
-    company_careers = SEARCH_CAREERS
+    sites: List[str] = list(settings.search_sites_list)
+    fresh = settings.SEARCH_FRESH
+    company_careers = settings.SEARCH_CAREERS
 
     # Allow user to embed site: overrides inline e.g. "React jobs site:naukri.com"
     site_matches = re.findall(r"site:(\S+)", text, re.IGNORECASE)
@@ -131,7 +124,7 @@ def _build_queries(parsed: dict) -> List[str]:
         return queries
 
     # Default: rotate through known job portals
-    for site in SEARCH_SITES:
+    for site in settings.search_sites_list:
         queries.append(f"{base} site:{site}{fresh_suffix}")
 
     return queries
