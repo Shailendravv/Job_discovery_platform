@@ -16,11 +16,12 @@ Supported input formats from frontend:
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import List
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
 from app.agents.tools.browse_jobs import browse_extract
 from app.agents.search_provider import provider
+from app.core.config import settings
 from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
@@ -158,7 +159,7 @@ def _build_queries(parsed: dict) -> List[str]:
     """
     base = parsed["query"]
     sites = parsed["sites"]
-    fresh_suffix = " after:2024-01-01" if parsed["fresh"] else ""
+    fresh_suffix = " after:2026-06-02" if parsed["fresh"] else ""
     careers_mode = parsed["company_careers"]
 
     queries: List[str] = []
@@ -180,6 +181,38 @@ def _build_queries(parsed: dict) -> List[str]:
         queries.append(f"{base} site:{site}{fresh_suffix}")
 
     return queries
+
+
+# ── Relevance ranker ─────────────────────────────────────────────────────────
+
+
+def _score_result(result: dict, query_terms: List[str]) -> int:
+    """
+    Simple keyword-overlap score between query terms and result title+snippet.
+    Higher = more relevant. Used to pick the top-N results to browse.
+    """
+    haystack = " ".join([
+        (result.get("title") or ""),
+        (result.get("content") or result.get("description") or result.get("snippet") or ""),
+    ]).lower()
+    return sum(1 for t in query_terms if t in haystack)
+
+
+def _rank_and_trim(results: List[dict], query: str, top_n: int) -> List[dict]:
+    """Score every result against the base query, return top_n by score."""
+    terms = [t.lower() for t in re.split(r"\W+", query) if len(t) > 2]
+    scored = sorted(results, key=lambda r: _score_result(r, terms), reverse=True)
+    kept = scored[:top_n]
+    log.info(
+        "[workflow] relevance rank: %d candidates → top %d selected for browse",
+        len(results), len(kept),
+    )
+    for i, r in enumerate(kept, 1):
+        log.debug(
+            "[workflow] rank[%d] score=%d title=%r url=%s",
+            i, _score_result(r, terms), r.get("title"), r.get("url"),
+        )
+    return kept
 
 
 # ── Job-type classifier ───────────────────────────────────────────────────────
@@ -236,24 +269,30 @@ async def search_jobs_workflow(
     queries = _build_queries(parsed)
     log.debug("[workflow] will run %d queries: %s", len(queries), queries)
 
-    # Collect raw results across all queries, de-duplicate by URL
+    # ── Phase 1: Search — fetch SEARCH_MAX_RESULTS per query, de-dupe by URL ──
+    search_per_query = settings.SEARCH_MAX_RESULTS
+    browse_top_n = settings.BROWSE_TOP_N
+
     seen_urls: set = set()
     raw_results: List[dict] = []
 
     for q in queries:
-        if len(raw_results) >= num_results * 2:
-            break
-        batch = provider.search(q, num_results=max(3, num_results // len(queries) + 1))
-        log.debug("[workflow] query=%r → %d results", q, len(batch))
+        batch = provider.search(q, num_results=search_per_query)
+        log.info(
+            "[workflow] query=%r fetch_per_query=%d → got %d results",
+            q, search_per_query, len(batch),
+        )
         for r in batch:
             url = r.get("url", "")
             if url and url not in seen_urls:
                 seen_urls.add(url)
                 raw_results.append(r)
 
-    # Trim to requested count
-    raw_results = raw_results[:num_results]
-    log.info("[workflow] total unique results to process: %d", len(raw_results))
+    log.info("[workflow] total unique candidates after search: %d", len(raw_results))
+
+    # ── Phase 2: Rank — score by relevance, keep only top BROWSE_TOP_N for browse
+    raw_results = _rank_and_trim(raw_results, parsed["query"], browse_top_n)
+    log.info("[workflow] browse phase will process %d results", len(raw_results))
 
     jobs: List[dict] = []
 
