@@ -6,7 +6,6 @@ class Settings(BaseSettings):
     SEARXNG_URL: str
     CAMOFOX_URL: str
     Ollama: str
-    SEARCH_NUM_RESULTS: int       # legacy — used by MCP search tool directly
     SEARCH_MAX_RESULTS: int = 10  # per-query fetch count (search phase)
     BROWSE_TOP_N: int = 5         # top-N relevant results sent to browse/extract phase
     SETTLE_SECONDS: float = 1.5

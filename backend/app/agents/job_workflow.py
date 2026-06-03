@@ -1,16 +1,7 @@
 """
-Unified job search workflow:
-  1. Build targeted queries — respects explicit site: directives and freshness signals
-  2. Search SearXNG for jobs (default 6 results)
-  3. Auto-browse each result URL via camofox (fetch tool)
-  4. Extract structured fields + job_type via Ollama (extract tool)
-  5. Print debug logs showing job_type and full JSON structure
-
-Supported input formats from frontend:
-  • Plain query            "Python developer Delhi"
-  • Site-targeted          "Python developer site:linkedin.com"
-  • Company carrier page   "jobs at Google" / "careers google.com"
-  • Structured JSON        {"query": "...", "sites": ["naukri.com"], "fresh": true}
+Unified job search workflow.
+All search targeting config (sites, freshness, result counts) lives in
+backend config/settings — the frontend sends only user_input.
 """
 
 import json
@@ -26,16 +17,14 @@ from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
 
-# ── Known job portals (used when user doesn't specify a site) ─────────────────
-DEFAULT_JOB_SITES = [
-    "naukri.com",
-    "linkedin.com/jobs",
-    "apna.co",
-    "indeed.com",
-    "instahyre.com",
-    "shine.com",
-    "foundit.in",  # ex-monster India
-]
+# ── Backend config for targeting (not exposed to frontend) ───────────────────
+# Edit .env to change these values — no code changes needed.
+# SEARCH_SITES:     which job portals to query
+# SEARCH_FRESH:     whether to restrict to recent postings
+# SEARCH_CAREERS:   whether to target company career pages
+SEARCH_SITES = ["naukri.com", "linkedin.com/jobs", "apna.co", "indeed.com", "instahyre.com", "shine.com", "foundit.in"]
+SEARCH_FRESH = True
+SEARCH_CAREERS = False
 
 # ── Schema used to extract structured fields from each job page ───────────────
 JOB_EXTRACT_SCHEMA = {
@@ -76,46 +65,24 @@ JOB_EXTRACT_SCHEMA = {
 # ── Input parsing ─────────────────────────────────────────────────────────────
 
 
-def _parse_user_input(user_input: str | dict) -> dict:
+def _parse_user_input(user_input: str) -> dict:
     """
-    Normalise various frontend input formats into:
-      {
-        "query": str,
-        "sites": list[str],   # explicit site targets (may be empty)
-        "fresh": bool,        # request freshness filter
-        "company_careers": bool,  # user wants company career-page crawl
-      }
+    Parse plain-text user query. Applies backend config defaults for
+    sites, freshness, and career-page mode.
+    Returns: { query, sites, fresh, company_careers }
     """
-    # Accept JSON dict from frontend
-    if isinstance(user_input, dict):
-        return {
-            "query": user_input.get("query", ""),
-            "sites": user_input.get("sites", []),
-            "fresh": bool(user_input.get("fresh", True)),
-            "company_careers": bool(user_input.get("company_careers", False)),
-        }
-
     text = str(user_input).strip()
+    sites: List[str] = list(SEARCH_SITES)
+    fresh = SEARCH_FRESH
+    company_careers = SEARCH_CAREERS
 
-    # Detect embedded JSON string
-    if text.startswith("{"):
-        try:
-            parsed = json.loads(text)
-            return _parse_user_input(parsed)
-        except json.JSONDecodeError:
-            pass
-
-    sites: List[str] = []
-    fresh = True
-    company_careers = False
-
-    # Extract explicit site: directives  →  "jobs site:naukri.com site:apna.co"
+    # Allow user to embed site: overrides inline e.g. "React jobs site:naukri.com"
     site_matches = re.findall(r"site:(\S+)", text, re.IGNORECASE)
     if site_matches:
         sites = site_matches
         text = re.sub(r"site:\S+", "", text, flags=re.IGNORECASE).strip()
 
-    # Detect career-page intent  →  "careers at google", "google.com/careers"
+    # Detect career-page intent e.g. "careers at Google"
     career_pattern = re.compile(
         r"\b(careers?|career\s*page|hiring\s*page|job\s*openings?)\s+(?:at\s+)?(\S+)",
         re.IGNORECASE,
@@ -124,26 +91,13 @@ def _parse_user_input(user_input: str | dict) -> dict:
     if m:
         company_careers = True
         company_hint = m.group(2).strip(".,/")
-        if "." not in company_hint:
-            # plain name → guess canonical domain
-            sites = [f"{company_hint.lower()}.com"]
-        else:
-            sites = [company_hint]
+        sites = [f"{company_hint.lower()}.com"] if "." not in company_hint else [company_hint]
         text = career_pattern.sub("", text).strip()
 
-    # Detect "latest / recent / new" keywords → already implies fresh
-    if re.search(r"\b(latest|recent|new|today|this\s+week)\b", text, re.IGNORECASE):
-        fresh = True
-        text = re.sub(
-            r"\b(latest|recent|new|today|this\s+week)\b", "", text, flags=re.IGNORECASE
-        ).strip()
+    # Strip freshness keywords (freshness is always on by backend default)
+    text = re.sub(r"\b(latest|recent|new|today|this\s+week)\b", "", text, flags=re.IGNORECASE).strip()
 
-    return {
-        "query": text,
-        "sites": sites,
-        "fresh": fresh,
-        "company_careers": company_careers,
-    }
+    return {"query": text, "sites": sites, "fresh": fresh, "company_careers": company_careers}
 
 
 # ── Query builder ─────────────────────────────────────────────────────────────
@@ -177,7 +131,7 @@ def _build_queries(parsed: dict) -> List[str]:
         return queries
 
     # Default: rotate through known job portals
-    for site in DEFAULT_JOB_SITES:
+    for site in SEARCH_SITES:
         queries.append(f"{base} site:{site}{fresh_suffix}")
 
     return queries
@@ -242,29 +196,10 @@ def _categorize_job_type(extracted: dict, description: str) -> str:
 # ── Main workflow ─────────────────────────────────────────────────────────────
 
 
-async def search_jobs_workflow(
-    user_input: str | dict,
-    num_results: int = 6,
-) -> List[dict]:
-    """
-    Accepts plain text OR structured dict from the frontend.
-
-    Plain text examples:
-      "Python developer Delhi"
-      "Python developer site:linkedin.com site:naukri.com"
-      "latest React jobs site:apna.co"
-      "careers at Google"
-
-    Structured dict example:
-      {
-        "query": "Data Engineer",
-        "sites": ["naukri.com", "linkedin.com/jobs"],
-        "fresh": true,
-        "company_careers": false
-      }
-    """
+async def search_jobs_workflow(user_input: str) -> List[dict]:
+    """Entry point called by the API. Accepts plain-text user query only."""
     parsed = _parse_user_input(user_input)
-    log.debug("[workflow] parsed input: %s", parsed)
+    log.info("[workflow] parsed input: %s", parsed)
 
     queries = _build_queries(parsed)
     log.debug("[workflow] will run %d queries: %s", len(queries), queries)
