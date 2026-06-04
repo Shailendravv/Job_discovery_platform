@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     SEARCH_MAX_RESULTS: int = 10
-    BROWSE_TOP_N: int = 5
+    BROWSE_TOP_N: int = 15
     SEARCH_SITES: str = "greenhouse.io,lever.co,myworkdayjobs.com"
     SEARCH_FRESH: bool = True
     SEARCH_CAREERS: bool = False

@@ -7,6 +7,7 @@ backend config/settings — the frontend sends only user_input.
 import json
 import logging
 import re
+import difflib
 from typing import List
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
@@ -188,14 +189,21 @@ def _rank_and_trim_dynamic(results: List[dict], query: str, top_n: int) -> List[
         end = raw.rfind("]")
         if start != -1 and end != -1:
             scores = json.loads(raw[start:end+1])
-            if isinstance(scores, list) and len(scores) == len(results):
+            if isinstance(scores, list):
+                if len(scores) != len(results):
+                    log.warning("[workflow] LLM returned invalid scores array (length mismatch): expected %d, got %d. Padding/truncating.", len(results), len(scores))
+                    if len(scores) < len(results):
+                        scores.extend([0] * (len(results) - len(scores)))
+                    else:
+                        scores = scores[:len(results)]
+
                 scored = list(zip(results, scores))
                 scored.sort(key=lambda x: x[1], reverse=True)
                 kept = [r for r, s in scored[:top_n]]
                 log.info("[workflow] LLM ranking successful. Top scores: %s", [s for r, s in scored[:top_n]])
                 return kept
             else:
-                log.warning("[workflow] LLM returned invalid scores array (length mismatch): %s", scores)
+                log.warning("[workflow] LLM returned invalid scores array (not a list): %s", scores)
     except Exception as e:
         log.warning("[workflow] LLM ranking failed: %s", e)
         
@@ -216,6 +224,18 @@ def _categorize_job_type(extracted: dict, description: str) -> str:
     return "unknown"
 
 
+def _is_duplicate(new_title: str, existing_titles: List[str]) -> bool:
+    if not new_title: return False
+    new_norm = re.sub(r'\W+', ' ', new_title.lower()).strip()
+    for et in existing_titles:
+        et_norm = re.sub(r'\W+', ' ', et.lower()).strip()
+        if not et_norm: continue
+        # Increased to 0.95 to be much more lenient (only near-identical strings are discarded)
+        if difflib.SequenceMatcher(None, new_norm, et_norm).ratio() > 0.95:
+            return True
+    return False
+
+
 async def search_jobs_workflow(user_input: str) -> List[dict]:
     """Entry point called by the API. Accepts plain-text user query only."""
     log.info("[workflow] starting dynamic search for: %s", user_input)
@@ -230,6 +250,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
 
     seen_urls: set = set()
     raw_results: List[dict] = []
+    seen_titles: List[str] = []
 
     for q in queries:
         # Use time_range="day" for latest jobs as requested
@@ -240,19 +261,28 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
         )
         for r in batch:
             url = r.get("url", "")
+            title = r.get("title", "")
             if url and url not in seen_urls:
+                if _is_duplicate(title, seen_titles):
+                    continue
+                seen_titles.append(title)
                 seen_urls.add(url)
                 raw_results.append(r)
 
     log.info("[workflow] total unique candidates after search: %d", len(raw_results))
 
-    # ── Phase 2: Rank — score by relevance using LLM, keep only top BROWSE_TOP_N
-    raw_results = _rank_and_trim_dynamic(raw_results, user_input, browse_top_n)
-    log.info("[workflow] browse phase will process %d results", len(raw_results))
+    # ── Phase 2: Rank — score by relevance using LLM, keep larger pool to allow skipping bad ones
+    pool_size = browse_top_n * 3
+    raw_results = _rank_and_trim_dynamic(raw_results, user_input, pool_size)
+    log.info("[workflow] browse phase will process up to %d candidates to find %d valid jobs", len(raw_results), browse_top_n)
 
     jobs: List[dict] = []
+    final_seen_titles: List[str] = []
 
     for idx, result in enumerate(raw_results):
+        if len(jobs) >= browse_top_n:
+            break
+            
         url = result.get("url") or ""
         snippet = (
             result.get("description")
@@ -280,6 +310,11 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
                 extracted = (
                     json.loads(raw_json) if isinstance(raw_json, str) else raw_json
                 )
+                
+                if not extracted or all(v is None for v in extracted.values()):
+                    log.warning("[workflow] [%d] Stage 1 classified as not a job or empty extraction. Skipping.", idx + 1)
+                    continue
+                    
                 log.debug(
                     "[workflow] [%d] extract succeeded, keys=%s",
                     idx + 1,
@@ -293,6 +328,14 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
                 )
         else:
             log.warning("[workflow] [%d] no valid URL, skipping browse", idx + 1)
+            continue
+            
+        # Dedupe check on final extracted title
+        final_title = (extracted.get("title") or base_title).strip()
+        if _is_duplicate(final_title, final_seen_titles):
+            log.info("[workflow] [%d] duplicate title detected after extraction: %r. Skipping.", idx + 1, final_title)
+            continue
+        final_seen_titles.append(final_title)
 
         # ── Build final job record ───────────────────────────────────────────
         title = (extracted.get("title") or base_title).strip()

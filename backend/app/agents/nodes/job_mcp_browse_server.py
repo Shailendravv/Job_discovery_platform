@@ -187,8 +187,9 @@ def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
     # Stage 1: Classification
     log.info("[mcp:browse] Stage 1: Classifying if page is a job listing...")
     class_prompt = (
-        "Analyze the following web page snapshot and determine if it is a job listing. "
-        "Return ONLY a JSON object: {\"is_job\": true} or {\"is_job\": false}.\n\n"
+        "Analyze the following web page snapshot and determine if it is a job listing or related to a job vacancy. "
+        "Return ONLY a JSON object: {\"is_job\": true} or {\"is_job\": false}. "
+        "If you are unsure or if the page contains any job descriptions, default to true.\n\n"
         f"Page ({url}):\n{trimmed_snapshot}"
     )
     

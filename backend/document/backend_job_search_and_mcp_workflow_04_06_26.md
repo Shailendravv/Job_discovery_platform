@@ -152,7 +152,7 @@ LLM_PROVIDER=ollama
 GROQ_API_KEY=your_groq_key_here
 GEMINI_API_KEY=your_gemini_key_here
 SEARCH_MAX_RESULTS=10
-BROWSE_TOP_N=5
+BROWSE_TOP_N=15
 SEARCH_SITES=greenhouse.io,lever.co,myworkdayjobs.com
 SEARCH_FRESH=true
 SEARCH_CAREERS=false
@@ -180,7 +180,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     SEARCH_MAX_RESULTS: int = 10
-    BROWSE_TOP_N: int = 5
+    BROWSE_TOP_N: int = 15
     SEARCH_SITES: str = "greenhouse.io,lever.co,myworkdayjobs.com"
     SEARCH_FRESH: bool = True
     SEARCH_CAREERS: bool = False
@@ -646,8 +646,9 @@ def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
 
     # Stage 1: Classification
     class_prompt = (
-        "Analyze the following web page snapshot and determine if it is a job listing. "
-        "Return ONLY a JSON object: {\"is_job\": true} or {\"is_job\": false}.\n\n"
+        "Analyze the following web page snapshot and determine if it is a job listing or related to a job vacancy. "
+        "Return ONLY a JSON object: {\"is_job\": true} or {\"is_job\": false}. "
+        "If you are unsure or if the page contains any job descriptions, default to true.\n\n"
         f"Page ({url}):\n{trimmed_snapshot}"
     )
     empty_result = json.dumps({k: None for k in schema.get("properties", {})})
@@ -708,14 +709,17 @@ if __name__ == "__main__":
 ### Custom Workflow Engine & Auxiliary Tools
 
 #### [app/agents/job_workflow.py](file:///d:/AI%20Projects/job_project/project/backend/app/agents/job_workflow.py)
-```python
+`python
 """
-Unified job search workflow orchestration.
-Accepts natural language user input, expands queries, ranks candidates, and extracts job objects.
+Unified job search workflow.
+All search targeting config (sites, freshness, result counts) lives in
+backend config/settings — the frontend sends only user_input.
 """
+
 import json
 import logging
 import re
+import difflib
 from typing import List
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
@@ -727,29 +731,47 @@ from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
 
+# ── Backend targeting config — all values read from settings (.env) ──────────
+
+# ── Schema used to extract structured fields from each job page ───────────────
 JOB_EXTRACT_SCHEMA = {
     "type": "object",
     "properties": {
         "title": {"type": "string", "description": "Job title"},
         "company": {"type": "string", "description": "Hiring company name"},
         "location": {"type": "string", "description": "Job location or remote status"},
-        "description": {"type": "string", "description": "Full job description or summary"},
+        "description": {
+            "type": "string",
+            "description": "Full job description or summary",
+        },
         "salary": {"type": "string", "description": "Salary or compensation range"},
-        "posted_date": {"type": "string", "description": "When the job was posted, e.g. '2 days ago'"},
-        "skills": {"type": "array", "items": {"type": "string"}, "description": "Required skills"},
+        "posted_date": {
+            "type": "string",
+            "description": "When the job was posted, e.g. '2 days ago', '2024-06-01'",
+        },
+        "skills": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Required skills listed in the posting",
+        },
         "job_type": {
             "type": "string",
-            "description": "Job category. One of: full-time, part-time, contract, internship, freelance, remote, on-site, hybrid, unknown"
+            "description": (
+                "Job category. One of: full-time, part-time, contract, "
+                "internship, freelance, remote, on-site, hybrid, unknown"
+            ),
         },
-        "apply_url": {"type": "string", "description": "Direct application URL"}
-    }
+        "apply_url": {
+            "type": "string",
+            "description": "Direct URL to apply for the job, if different from the listing URL",
+        },
+    },
 }
 
-
 def _parse_user_input(user_input: str) -> dict:
-    """Fallback plain-text query parser."""
+    """Fallback plain-text parser if LLM fails."""
     text = str(user_input).strip()
-    sites = list(settings.search_sites_list)
+    sites: List[str] = list(settings.search_sites_list)
     fresh = settings.SEARCH_FRESH
     company_careers = settings.SEARCH_CAREERS
 
@@ -758,18 +780,43 @@ def _parse_user_input(user_input: str) -> dict:
         sites = site_matches
         text = re.sub(r"site:\S+", "", text, flags=re.IGNORECASE).strip()
 
+    career_pattern = re.compile(
+        r"\b(careers?|career\s*page|hiring\s*page|job\s*openings?)\s+(?:at\s+)?(\S+)",
+        re.IGNORECASE,
+    )
+    m = career_pattern.search(text)
+    if m:
+        company_careers = True
+        company_hint = m.group(2).strip(".,/")
+        sites = [f"{company_hint.lower()}.com"] if "." not in company_hint else [company_hint]
+        text = career_pattern.sub("", text).strip()
+
+    text = re.sub(r"\b(latest|recent|new|today|this\s+week)\b", "", text, flags=re.IGNORECASE).strip()
+
     return {"query": text, "sites": sites, "fresh": fresh, "company_careers": company_careers}
 
-
 def _build_queries(parsed: dict) -> List[str]:
-    """Fallback builder when LLM query builder is unavailable."""
+    """Fallback query builder if LLM fails."""
     base = parsed["query"]
     sites = parsed["sites"]
-    return [f"{base} site:{site}" for site in sites]
-
+    careers_mode = parsed["company_careers"]
+    queries: List[str] = []
+    if careers_mode and sites:
+        for site in sites:
+            domain = site.split("/")[0]
+            queries.append(f"{base} site:{domain}/careers")
+            queries.append(f"{base} site:{domain}/jobs")
+        return queries
+    if sites:
+        for site in sites:
+            queries.append(f"{base} site:{site}")
+        return queries
+    for site in settings.search_sites_list:
+        queries.append(f"{base} site:{site}")
+    return queries
 
 def _build_queries_dynamic(user_input: str) -> List[str]:
-    """LLM pre-search query expander targeting configured applicant tracking platforms."""
+    """Uses LLM to dynamically generate SearXNG queries targeting ATS platforms."""
     log.info("[workflow] Dynamically building search queries using LLM")
     sites_str = ", ".join(settings.search_sites_list)
     
@@ -784,60 +831,93 @@ def _build_queries_dynamic(user_input: str) -> List[str]:
     
     try:
         raw = call_llm(prompt, json_format=True, timeout=30)
+        import re
+        # try to parse just the array
         raw = re.sub(r"^```(?:json)?\s*", "", raw).strip()
         raw = re.sub(r"\s*```$", "", raw).strip()
-        start, end = raw.find("["), raw.rfind("]")
+        
+        start = raw.find("[")
+        end = raw.rfind("]")
         if start != -1 and end != -1:
             queries = json.loads(raw[start:end+1])
-            if isinstance(queries, list) and len(queries) > 0:
+            if isinstance(queries, list) and all(isinstance(q, str) for q in queries) and len(queries) > 0:
+                log.info("[workflow] LLM generated %d queries: %s", len(queries), queries)
                 return queries
     except Exception as e:
-        log.warning("[workflow] LLM query generation failed: %s. Falling back to regex.", e)
+        log.warning("[workflow] LLM query generation failed: %s. Falling back to default logic.", e)
         
-    return _build_queries(_parse_user_input(user_input))
+    parsed = _parse_user_input(user_input)
+    return _build_queries(parsed)
 
 
 def _rank_and_trim(results: List[dict], query: str, top_n: int) -> List[dict]:
-    """Fallback simple keyword ranker."""
+    """Fallback ranking logic using simple keywords."""
     terms = [t.lower() for t in re.split(r"\W+", query) if len(t) > 2]
+    
     def score(result):
-        haystack = " ".join([result.get("title", ""), result.get("content", "")]).lower()
+        haystack = " ".join([
+            (result.get("title") or ""),
+            (result.get("content") or result.get("description") or result.get("snippet") or ""),
+        ]).lower()
         return sum(1 for t in terms if t in haystack)
-    return sorted(results, key=score, reverse=True)[:top_n]
+
+    scored = sorted(results, key=score, reverse=True)
+    return scored[:top_n]
 
 
 def _rank_and_trim_dynamic(results: List[dict], query: str, top_n: int) -> List[dict]:
-    """LLM snippet relevance scoring (0-10) to trim down targets before browser actions."""
+    """Score every result against the base query using LLM, return top_n."""
     if not results:
         return []
+        
     log.info("[workflow] LLM ranking %d candidates for query: %r", len(results), query)
     
     snippets = []
     for i, r in enumerate(results):
         title = r.get("title", "")
-        snip = r.get("content") or r.get("snippet") or ""
-        snippets.append(f"[{i}] Title: {title}\nSnippet: {snip}")
+        url = r.get("url", "")
+        snip = r.get("content") or r.get("description") or r.get("snippet") or ""
+        snippets.append(f"[{i}] Title: {title}\nURL: {url}\nSnippet: {snip}")
         
+    snippets_text = "\n\n".join(snippets)
+    
     prompt = (
         f"You are a job search ranker. The user is looking for: '{query}'.\n"
         "Score each of the following search results from 0 to 10 based on how well it matches the user's intent. "
-        "Return ONLY a JSON array of integers, where the index corresponds to the result index.\n\n"
-        f"{'{'}index_scores{'}'} examples: [8, 2, 9, ...]\n\n"
-        f"Results:\n" + "\n\n".join(snippets)
+        "A score of 10 means a perfect match (recent, exact job, trusted site). "
+        "A score of 0 means irrelevant.\n\n"
+        f"{snippets_text}\n\n"
+        "Return ONLY a JSON array of integers, where the index corresponds to the result index. "
+        f"For example, if there are {len(results)} results, return: [8, 2, 9, ...]"
     )
     
     try:
         raw = call_llm(prompt, json_format=True, timeout=60)
+        import re
         raw = re.sub(r"^```(?:json)?\s*", "", raw).strip()
         raw = re.sub(r"\s*```$", "", raw).strip()
-        start, end = raw.find("["), raw.rfind("]")
+        
+        start = raw.find("[")
+        end = raw.rfind("]")
         if start != -1 and end != -1:
             scores = json.loads(raw[start:end+1])
-            if isinstance(scores, list) and len(scores) == len(results):
-                scored = sorted(zip(results, scores), key=lambda x: x[1], reverse=True)
-                return [r for r, s in scored[:top_n]]
+            if isinstance(scores, list):
+                if len(scores) != len(results):
+                    log.warning("[workflow] LLM returned invalid scores array (length mismatch): expected %d, got %d. Padding/truncating.", len(results), len(scores))
+                    if len(scores) < len(results):
+                        scores.extend([0] * (len(results) - len(scores)))
+                    else:
+                        scores = scores[:len(results)]
+
+                scored = list(zip(results, scores))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                kept = [r for r, s in scored[:top_n]]
+                log.info("[workflow] LLM ranking successful. Top scores: %s", [s for r, s in scored[:top_n]])
+                return kept
+            else:
+                log.warning("[workflow] LLM returned invalid scores array (not a list): %s", scores)
     except Exception as e:
-        log.warning("[workflow] LLM ranking failed: %s. Using default scoring.", e)
+        log.warning("[workflow] LLM ranking failed: %s", e)
         
     return _rank_and_trim(results, query, top_n)
 
@@ -847,53 +927,138 @@ def _categorize_job_type(extracted: dict, description: str) -> str:
     if jt and jt != "unknown":
         return jt
     desc_lower = description.lower()
-    for kw in ("internship", "contract", "freelance", "part-time", "remote", "hybrid", "full-time"):
+    for kw in (
+        "internship", "contract", "freelance", "part-time", "part time",
+        "remote", "hybrid", "full-time", "full time",
+    ):
         if kw in desc_lower:
-            return kw
+            return kw.replace(" ", "-")
     return "unknown"
 
 
-async def search_jobs_workflow(user_input: str) -> List[dict]:
-    log.info("[workflow] starting dynamic search for: %s", user_input)
-    queries = _build_queries_dynamic(user_input)
+def _is_duplicate(new_title: str, existing_titles: List[str]) -> bool:
+    if not new_title: return False
+    new_norm = re.sub(r'\W+', ' ', new_title.lower()).strip()
+    for et in existing_titles:
+        et_norm = re.sub(r'\W+', ' ', et.lower()).strip()
+        if not et_norm: continue
+        # Increased to 0.95 to be much more lenient (only near-identical strings are discarded)
+        if difflib.SequenceMatcher(None, new_norm, et_norm).ratio() > 0.95:
+            return True
+    return False
 
+
+async def search_jobs_workflow(user_input: str) -> List[dict]:
+    """Entry point called by the API. Accepts plain-text user query only."""
+    log.info("[workflow] starting dynamic search for: %s", user_input)
+
+    queries = _build_queries_dynamic(user_input)
+    log.debug("[workflow] will run %d queries: %s", len(queries), queries)
+
+    # ── Phase 1: Search — fetch SEARCH_MAX_RESULTS per query, de-dupe by URL ──
+    # Fetch 2N results so we have enough to rank/score
     search_per_query = settings.SEARCH_MAX_RESULTS * 2
     browse_top_n = settings.BROWSE_TOP_N
-    seen_urls = set()
-    raw_results = []
+
+    seen_urls: set = set()
+    raw_results: List[dict] = []
+    seen_titles: List[str] = []
 
     for q in queries:
-        # Enforce search freshness with time_range="day"
+        # Use time_range="day" for latest jobs as requested
         batch = provider.search(q, num_results=search_per_query, time_range="day")
+        log.info(
+            "[workflow] query=%r fetch_per_query=%d → got %d results",
+            q, search_per_query, len(batch),
+        )
         for r in batch:
             url = r.get("url", "")
+            title = r.get("title", "")
             if url and url not in seen_urls:
+                if _is_duplicate(title, seen_titles):
+                    continue
+                seen_titles.append(title)
                 seen_urls.add(url)
                 raw_results.append(r)
 
-    raw_results = _rank_and_trim_dynamic(raw_results, user_input, browse_top_n)
-    jobs = []
+    log.info("[workflow] total unique candidates after search: %d", len(raw_results))
+
+    # ── Phase 2: Rank — score by relevance using LLM, keep larger pool to allow skipping bad ones
+    pool_size = browse_top_n * 3
+    raw_results = _rank_and_trim_dynamic(raw_results, user_input, pool_size)
+    log.info("[workflow] browse phase will process up to %d candidates to find %d valid jobs", len(raw_results), browse_top_n)
+
+    jobs: List[dict] = []
+    final_seen_titles: List[str] = []
 
     for idx, result in enumerate(raw_results):
+        if len(jobs) >= browse_top_n:
+            break
+            
         url = result.get("url") or ""
-        snippet = (result.get("description") or result.get("snippet") or result.get("content") or "").strip()
-        base_title = (result.get("title") or "").strip()
-        extracted = {}
+        snippet = (
+            result.get("description")
+            or result.get("snippet")
+            or result.get("content")
+            or ""
+        ).strip()
+        base_title = (result.get("title") or result.get("name") or "").strip()
 
+        extracted: dict = {}
+
+        log.debug(
+            "[workflow] [%d/%d] processing url=%r title=%r",
+            idx + 1,
+            len(raw_results),
+            url,
+            base_title,
+        )
+
+        # ── Auto-browse: fetch + extract structured fields ───────────────────
         if url.startswith(("http://", "https://")):
+            log.debug("[workflow] [%d] fetching page via camofox: %r", idx + 1, url)
             try:
                 raw_json = browse_extract(url, JOB_EXTRACT_SCHEMA)
-                extracted = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                extracted = (
+                    json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                )
+                
+                if not extracted or all(v is None for v in extracted.values()):
+                    log.warning("[workflow] [%d] Stage 1 classified as not a job or empty extraction. Skipping.", idx + 1)
+                    continue
+                    
+                log.debug(
+                    "[workflow] [%d] extract succeeded, keys=%s",
+                    idx + 1,
+                    list(extracted.keys()),
+                )
             except Exception as exc:
-                log.warning("[workflow] [%d] browse_extract failed (%s). Falling back.", idx + 1, exc)
+                log.warning(
+                    "[workflow] [%d] browse_extract failed (%s), falling back to snippet",
+                    idx + 1,
+                    exc,
+                )
+        else:
+            log.warning("[workflow] [%d] no valid URL, skipping browse", idx + 1)
+            continue
+            
+        # Dedupe check on final extracted title
+        final_title = (extracted.get("title") or base_title).strip()
+        if _is_duplicate(final_title, final_seen_titles):
+            log.info("[workflow] [%d] duplicate title detected after extraction: %r. Skipping.", idx + 1, final_title)
+            continue
+        final_seen_titles.append(final_title)
 
+        # ── Build final job record ───────────────────────────────────────────
         title = (extracted.get("title") or base_title).strip()
         company = (extracted.get("company") or result.get("company") or "").strip()
         location = extracted.get("location") or result.get("location") or None
         description = (extracted.get("description") or snippet).strip()
         skills = extracted.get("skills") or extract_skills_from_text(description)
         job_type = _categorize_job_type(extracted, description)
-        posted_date = extracted.get("posted_date") or result.get("publishedDate") or None
+        posted_date = (
+            extracted.get("posted_date") or result.get("publishedDate") or None
+        )
         apply_url = extracted.get("apply_url") or url or None
 
         job = JobResult(
@@ -907,10 +1072,29 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
             posted_date=posted_date,
             apply_url=apply_url,
         )
-        jobs.append(job.model_dump())
+        job_dict = job.model_dump()
 
+        log.info(
+            "[workflow] [%d] job_type=%r  title=%r  url=%r  posted=%r",
+            idx + 1,
+            job_type,
+            title,
+            url,
+            posted_date,
+        )
+        print(f"\n{'='*60}")
+        print(
+            f"[JOB {idx+1}/{len(raw_results)}]  job_type={job_type!r}  posted={posted_date!r}"
+        )
+        print(json.dumps(job_dict, indent=2, ensure_ascii=False))
+        print("=" * 60)
+
+        jobs.append(job_dict)
+
+    log.info("[workflow] done — %d jobs extracted", len(jobs))
     return jobs
-```
+
+`
 
 #### [app/agents/tools/web_search.py](file:///d:/AI%20Projects/job_project/project/backend/app/agents/tools/web_search.py)
 ```python
