@@ -18,14 +18,18 @@ log = logging.getLogger(__name__)
 mcp = FastMCP("search-server")
 
 
-def _do_search(query: str, max_results: int | None = None) -> list[dict]:
+def _do_search(query: str, max_results: int | None = None, time_range: str | None = None) -> list[dict]:
     """Core SearXNG call — returns raw result dicts. Importable directly."""
     max_results = max_results if max_results is not None else settings.SEARCH_MAX_RESULTS
-    log.info("[mcp:search] query=%r max_results=%d", query, max_results)
+    log.info("[mcp:search] query=%r max_results=%d time_range=%r", query, max_results, time_range)
     try:
+        params = {"q": query, "format": "json"}
+        if time_range:
+            params["time_range"] = time_range
+            
         response = httpx.get(
             f"{settings.SEARXNG_URL}/search",
-            params={"q": query, "format": "json"},
+            params=params,
             timeout=10.0,
         )
         response.raise_for_status()

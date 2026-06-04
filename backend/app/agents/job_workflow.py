@@ -13,6 +13,7 @@ from app.agents.tools.skill_extraction import extract_skills_from_text
 from app.agents.tools.browse_jobs import browse_extract
 from app.agents.search_provider import provider
 from app.core.config import settings
+from app.core.llm import call_llm
 from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
@@ -54,28 +55,18 @@ JOB_EXTRACT_SCHEMA = {
     },
 }
 
-
-# ── Input parsing ─────────────────────────────────────────────────────────────
-
-
 def _parse_user_input(user_input: str) -> dict:
-    """
-    Parse plain-text user query. Applies backend config defaults for
-    sites, freshness, and career-page mode.
-    Returns: { query, sites, fresh, company_careers }
-    """
+    """Fallback plain-text parser if LLM fails."""
     text = str(user_input).strip()
     sites: List[str] = list(settings.search_sites_list)
     fresh = settings.SEARCH_FRESH
     company_careers = settings.SEARCH_CAREERS
 
-    # Allow user to embed site: overrides inline e.g. "React jobs site:naukri.com"
     site_matches = re.findall(r"site:(\S+)", text, re.IGNORECASE)
     if site_matches:
         sites = site_matches
         text = re.sub(r"site:\S+", "", text, flags=re.IGNORECASE).strip()
 
-    # Detect career-page intent e.g. "careers at Google"
     career_pattern = re.compile(
         r"\b(careers?|career\s*page|hiring\s*page|job\s*openings?)\s+(?:at\s+)?(\S+)",
         re.IGNORECASE,
@@ -87,82 +78,128 @@ def _parse_user_input(user_input: str) -> dict:
         sites = [f"{company_hint.lower()}.com"] if "." not in company_hint else [company_hint]
         text = career_pattern.sub("", text).strip()
 
-    # Strip freshness keywords (freshness is always on by backend default)
     text = re.sub(r"\b(latest|recent|new|today|this\s+week)\b", "", text, flags=re.IGNORECASE).strip()
 
     return {"query": text, "sites": sites, "fresh": fresh, "company_careers": company_careers}
 
-
-# ── Query builder ─────────────────────────────────────────────────────────────
-
-
 def _build_queries(parsed: dict) -> List[str]:
-    """
-    Return a list of SearXNG query strings.
-
-    • If explicit sites given  → one query per site with site: operator
-    • If company_careers       → target <company>/careers or jobs.<company>
-    • Otherwise                → one query per default job portal
-    """
+    """Fallback query builder if LLM fails."""
     base = parsed["query"]
     sites = parsed["sites"]
-    fresh_suffix = " after:2026-06-02" if parsed["fresh"] else ""
     careers_mode = parsed["company_careers"]
-
     queries: List[str] = []
-
     if careers_mode and sites:
         for site in sites:
-            domain = site.split("/")[0]  # strip path if any
-            queries.append(f"{base} site:{domain}/careers{fresh_suffix}")
-            queries.append(f"{base} site:{domain}/jobs{fresh_suffix}")
+            domain = site.split("/")[0]
+            queries.append(f"{base} site:{domain}/careers")
+            queries.append(f"{base} site:{domain}/jobs")
         return queries
-
     if sites:
         for site in sites:
-            queries.append(f"{base} site:{site}{fresh_suffix}")
+            queries.append(f"{base} site:{site}")
         return queries
-
-    # Default: rotate through known job portals
     for site in settings.search_sites_list:
-        queries.append(f"{base} site:{site}{fresh_suffix}")
-
+        queries.append(f"{base} site:{site}")
     return queries
 
-
-# ── Relevance ranker ─────────────────────────────────────────────────────────
-
-
-def _score_result(result: dict, query_terms: List[str]) -> int:
-    """
-    Simple keyword-overlap score between query terms and result title+snippet.
-    Higher = more relevant. Used to pick the top-N results to browse.
-    """
-    haystack = " ".join([
-        (result.get("title") or ""),
-        (result.get("content") or result.get("description") or result.get("snippet") or ""),
-    ]).lower()
-    return sum(1 for t in query_terms if t in haystack)
+def _build_queries_dynamic(user_input: str) -> List[str]:
+    """Uses LLM to dynamically generate SearXNG queries targeting ATS platforms."""
+    log.info("[workflow] Dynamically building search queries using LLM")
+    sites_str = ", ".join(settings.search_sites_list)
+    
+    prompt = (
+        f"You are a job search assistant. The user wants to find a job: '{user_input}'\n"
+        "Generate up to 3 distinct search queries to find this job. "
+        f"Target these specific job platforms: {sites_str}. "
+        "Each query MUST use the 'site:' operator. "
+        "Format the output strictly as a JSON array of strings, for example: "
+        "[\"React developer site:greenhouse.io\", \"React engineer site:lever.co\"]"
+    )
+    
+    try:
+        raw = call_llm(prompt, json_format=True, timeout=30)
+        import re
+        # try to parse just the array
+        raw = re.sub(r"^```(?:json)?\s*", "", raw).strip()
+        raw = re.sub(r"\s*```$", "", raw).strip()
+        
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start != -1 and end != -1:
+            queries = json.loads(raw[start:end+1])
+            if isinstance(queries, list) and all(isinstance(q, str) for q in queries) and len(queries) > 0:
+                log.info("[workflow] LLM generated %d queries: %s", len(queries), queries)
+                return queries
+    except Exception as e:
+        log.warning("[workflow] LLM query generation failed: %s. Falling back to default logic.", e)
+        
+    parsed = _parse_user_input(user_input)
+    return _build_queries(parsed)
 
 
 def _rank_and_trim(results: List[dict], query: str, top_n: int) -> List[dict]:
-    """Score every result against the base query, return top_n by score."""
+    """Fallback ranking logic using simple keywords."""
     terms = [t.lower() for t in re.split(r"\W+", query) if len(t) > 2]
-    scored = sorted(results, key=lambda r: _score_result(r, terms), reverse=True)
-    kept = scored[:top_n]
-    log.info(
-        "[workflow] relevance rank: %d candidates → top %d selected for browse",
-        len(results), len(kept),
+    
+    def score(result):
+        haystack = " ".join([
+            (result.get("title") or ""),
+            (result.get("content") or result.get("description") or result.get("snippet") or ""),
+        ]).lower()
+        return sum(1 for t in terms if t in haystack)
+
+    scored = sorted(results, key=score, reverse=True)
+    return scored[:top_n]
+
+
+def _rank_and_trim_dynamic(results: List[dict], query: str, top_n: int) -> List[dict]:
+    """Score every result against the base query using LLM, return top_n."""
+    if not results:
+        return []
+        
+    log.info("[workflow] LLM ranking %d candidates for query: %r", len(results), query)
+    
+    snippets = []
+    for i, r in enumerate(results):
+        title = r.get("title", "")
+        url = r.get("url", "")
+        snip = r.get("content") or r.get("description") or r.get("snippet") or ""
+        snippets.append(f"[{i}] Title: {title}\nURL: {url}\nSnippet: {snip}")
+        
+    snippets_text = "\n\n".join(snippets)
+    
+    prompt = (
+        f"You are a job search ranker. The user is looking for: '{query}'.\n"
+        "Score each of the following search results from 0 to 10 based on how well it matches the user's intent. "
+        "A score of 10 means a perfect match (recent, exact job, trusted site). "
+        "A score of 0 means irrelevant.\n\n"
+        f"{snippets_text}\n\n"
+        "Return ONLY a JSON array of integers, where the index corresponds to the result index. "
+        f"For example, if there are {len(results)} results, return: [8, 2, 9, ...]"
     )
-    for i, r in enumerate(kept, 1):
-        log.debug(
-            "[workflow] rank[%d] score=%d title=%r url=%s",
-            i, _score_result(r, terms), r.get("title"), r.get("url"),
-        )
-    return kept
-
-
-# ── Job-type classifier ───────────────────────────────────────────────────────
+    
+    try:
+        raw = call_llm(prompt, json_format=True, timeout=60)
+        import re
+        raw = re.sub(r"^```(?:json)?\s*", "", raw).strip()
+        raw = re.sub(r"\s*```$", "", raw).strip()
+        
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start != -1 and end != -1:
+            scores = json.loads(raw[start:end+1])
+            if isinstance(scores, list) and len(scores) == len(results):
+                scored = list(zip(results, scores))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                kept = [r for r, s in scored[:top_n]]
+                log.info("[workflow] LLM ranking successful. Top scores: %s", [s for r, s in scored[:top_n]])
+                return kept
+            else:
+                log.warning("[workflow] LLM returned invalid scores array (length mismatch): %s", scores)
+    except Exception as e:
+        log.warning("[workflow] LLM ranking failed: %s", e)
+        
+    return _rank_and_trim(results, query, top_n)
 
 
 def _categorize_job_type(extracted: dict, description: str) -> str:
@@ -171,41 +208,32 @@ def _categorize_job_type(extracted: dict, description: str) -> str:
         return jt
     desc_lower = description.lower()
     for kw in (
-        "internship",
-        "contract",
-        "freelance",
-        "part-time",
-        "part time",
-        "remote",
-        "hybrid",
-        "full-time",
-        "full time",
+        "internship", "contract", "freelance", "part-time", "part time",
+        "remote", "hybrid", "full-time", "full time",
     ):
         if kw in desc_lower:
             return kw.replace(" ", "-")
     return "unknown"
 
 
-# ── Main workflow ─────────────────────────────────────────────────────────────
-
-
 async def search_jobs_workflow(user_input: str) -> List[dict]:
     """Entry point called by the API. Accepts plain-text user query only."""
-    parsed = _parse_user_input(user_input)
-    log.info("[workflow] parsed input: %s", parsed)
+    log.info("[workflow] starting dynamic search for: %s", user_input)
 
-    queries = _build_queries(parsed)
+    queries = _build_queries_dynamic(user_input)
     log.debug("[workflow] will run %d queries: %s", len(queries), queries)
 
     # ── Phase 1: Search — fetch SEARCH_MAX_RESULTS per query, de-dupe by URL ──
-    search_per_query = settings.SEARCH_MAX_RESULTS
+    # Fetch 2N results so we have enough to rank/score
+    search_per_query = settings.SEARCH_MAX_RESULTS * 2
     browse_top_n = settings.BROWSE_TOP_N
 
     seen_urls: set = set()
     raw_results: List[dict] = []
 
     for q in queries:
-        batch = provider.search(q, num_results=search_per_query)
+        # Use time_range="day" for latest jobs as requested
+        batch = provider.search(q, num_results=search_per_query, time_range="day")
         log.info(
             "[workflow] query=%r fetch_per_query=%d → got %d results",
             q, search_per_query, len(batch),
@@ -218,8 +246,8 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
 
     log.info("[workflow] total unique candidates after search: %d", len(raw_results))
 
-    # ── Phase 2: Rank — score by relevance, keep only top BROWSE_TOP_N for browse
-    raw_results = _rank_and_trim(raw_results, parsed["query"], browse_top_n)
+    # ── Phase 2: Rank — score by relevance using LLM, keep only top BROWSE_TOP_N
+    raw_results = _rank_and_trim_dynamic(raw_results, user_input, browse_top_n)
     log.info("[workflow] browse phase will process %d results", len(raw_results))
 
     jobs: List[dict] = []

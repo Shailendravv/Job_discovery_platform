@@ -7,10 +7,13 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     SEARXNG_URL: str
     CAMOFOX_URL: str
-    Ollama: str
+    Ollama: str = "http://localhost:11434"
+    LLM_PROVIDER: str = "ollama"  # e.g., 'ollama', 'groq', 'gemini'
+    GROQ_API_KEY: str | None = None
+    GEMINI_API_KEY: str | None = None
     SEARCH_MAX_RESULTS: int = 10
     BROWSE_TOP_N: int = 5
-    SEARCH_SITES: str = "naukri.com,linkedin.com/jobs,apna.co,indeed.com,instahyre.com,shine.com,foundit.in"
+    SEARCH_SITES: str = "greenhouse.io,lever.co,myworkdayjobs.com"
     SEARCH_FRESH: bool = True
     SEARCH_CAREERS: bool = False
     SETTLE_SECONDS: float = 1.5

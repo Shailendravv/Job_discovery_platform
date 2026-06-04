@@ -13,10 +13,10 @@ log = logging.getLogger(__name__)
 
 
 class SearchProvider:
-    def search(self, query: str, num_results: int | None = None) -> list[dict]:
+    def search(self, query: str, num_results: int | None = None, time_range: str | None = None) -> list[dict]:
         n = num_results if num_results is not None else settings.SEARCH_MAX_RESULTS
         log.debug("[provider] search query=%r num_results=%d", query, n)
-        results = _do_search(query, max_results=n)
+        results = _do_search(query, max_results=n, time_range=time_range)
         log.debug("[provider] got %d results", len(results))
         return results
 
