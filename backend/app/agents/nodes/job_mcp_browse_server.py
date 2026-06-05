@@ -163,14 +163,14 @@ def _do_fetch(url: str, user_id: str = "") -> str:
             _close_tab(client, user_id, tab_id)
 
     # Basic DOM Sanitization: compress empty lines
-    snapshot = re.sub(r'\n\s*\n', '\n', snapshot)
+    snapshot = re.sub(r"\n\s*\n", "\n", snapshot)
     result = _truncate(snapshot)
     log.info("[mcp:browse] ── _do_fetch END url=%r final_chars=%d", url, len(result))
     return result
 
 
 def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
-    """Fetch a page and extract structured JSON using multi-stage LLM approach."""
+    """Fetch a page and extract structured JSON using LLM approach."""
     log.info(
         "[mcp:browse] ── _do_extract START url=%r fields=%s",
         url,
@@ -184,28 +184,12 @@ def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
 
     trimmed_snapshot = _truncate(snapshot, _EXTRACT_SNAPSHOT_CHARS)
 
-    # Stage 1: Classification
-    log.info("[mcp:browse] Stage 1: Classifying if page is a job listing...")
-    class_prompt = (
-        "Analyze the following web page snapshot and determine if it is a job listing or related to a job vacancy. "
-        "Return ONLY a JSON object: {\"is_job\": true} or {\"is_job\": false}. "
-        "If you are unsure or if the page contains any job descriptions, default to true.\n\n"
-        f"Page ({url}):\n{trimmed_snapshot}"
-    )
-    
-    empty_result = json.dumps({k: None for k in schema.get("properties", {})})
+    # ── REMOVED: Stage 1 classifier ─────────────────────────────
+    # LinkedIn and other job sites often block headless browsers,
+    # resulting in login walls or minimal content that fools the classifier.
+    # Since we already know these are job URLs, skip classification
+    # and let the extraction LLM handle empty/missing content naturally.
 
-    try:
-        class_raw = call_llm(class_prompt, json_format=True, timeout=_OLLAMA_TIMEOUT)
-        class_data = _parse_llm_json(class_raw)
-        if not class_data.get("is_job", False):
-            log.info("[mcp:browse] Stage 1 failed: Not a job listing. Skipping extraction.")
-            return empty_result
-    except Exception as e:
-        log.warning("[mcp:browse] Stage 1 classification error: %s. Proceeding anyway.", e)
-
-    # Stage 2: Core Extraction
-    log.info("[mcp:browse] Stage 2: Extracting core fields...")
     fields = schema.get("properties", {})
     field_lines = "\n".join(
         f'  "{k}": {v.get("description", "")}' for k, v in fields.items()
@@ -213,39 +197,25 @@ def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
 
     extract_prompt = (
         "Extract job data from the page snapshot below. "
-        "Return ONLY a JSON object with these exact fields (use null for missing values):\n"
+        "If the page is a login wall, anti-bot challenge, or missing job content, "
+        "return a JSON object with all fields set to null. "
+        "Otherwise, return ONLY a JSON object with these exact fields (use null for missing values):\n"
         f"{field_lines}\n\n"
-        f"Page ({url}):\n{trimmed_snapshot}"
+        f"URL: {url}\n\n"
+        f"Page content:\n{trimmed_snapshot}"
     )
 
     try:
         raw = call_llm(extract_prompt, json_format=True, timeout=_OLLAMA_TIMEOUT)
-        log.debug("[mcp:browse] LLM raw response length=%d", len(raw))
-    except RuntimeError as e:
-        log.warning("[mcp:browse] LLM timeout: %s", e)
-        return empty_result
-    except Exception as e:
-        log.warning("[mcp:browse] LLM call failed: %s", e)
-        return f"Extraction failed: {type(e).__name__}: {e}"
-
-    try:
         parsed = _parse_llm_json(raw)
-        log.info(
-            "[mcp:browse] ── _do_extract END url=%r extracted_keys=%s",
-            url,
-            list(parsed.keys()),
-        )
         return json.dumps(parsed, indent=2)
-    except (ValueError, json.JSONDecodeError) as e:
-        log.warning(
-            "[mcp:browse] JSON parse failed (%s), returning empty result. raw=%r",
-            e,
-            raw[:300],
-        )
-        return empty_result
+    except Exception as e:
+        log.warning("[mcp:browse] Extraction failed: %s", e)
+        return json.dumps({k: None for k in fields})
 
 
 # ── MCP tools ─────────────────────────────────────────────────────────────────
+
 
 @mcp.tool()
 def fetch(url: str, user_id: str = "") -> str:
