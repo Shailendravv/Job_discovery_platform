@@ -312,8 +312,8 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
                 )
                 
                 if not extracted or all(v is None for v in extracted.values()):
-                    log.warning("[workflow] [%d] Stage 1 classified as not a job or empty extraction. Skipping.", idx + 1)
-                    continue
+                    log.warning("[workflow] [%d] browse extraction empty, falling back to snippet.", idx + 1)
+                    extracted = {}
                     
                 log.debug(
                     "[workflow] [%d] extract succeeded, keys=%s",
@@ -342,6 +342,10 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
         company = (extracted.get("company") or result.get("company") or "").strip()
         location = extracted.get("location") or result.get("location") or None
         description = (extracted.get("description") or snippet).strip()
+
+        if not title and not description:
+            log.warning("[workflow] [%d] no title or description, skipping.", idx + 1)
+            continue
         skills = extracted.get("skills") or extract_skills_from_text(description)
         job_type = _categorize_job_type(extracted, description)
         posted_date = (
