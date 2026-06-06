@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     SEARXNG_URL: str
     CAMOFOX_URL: str
+    MCP_SEARCH_URL: str = "http://localhost:8001"
+    MCP_BROWSE_URL: str = "http://localhost:8002"
     Ollama: str = "http://localhost:11434"
     LLM_PROVIDER: str = "ollama"  # e.g., 'ollama', 'groq', 'gemini'
     GROQ_API_KEY: str | None = None

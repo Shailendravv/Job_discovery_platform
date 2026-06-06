@@ -6,6 +6,7 @@ The core logic lives in _do_search() so it can be imported directly
 (Option B) without spinning up the MCP subprocess.
 """
 
+import json
 import logging
 
 import httpx
@@ -65,5 +66,15 @@ def search(query: str, max_results: int | None = None) -> str:
     return "\n\n".join(lines)
 
 
+@mcp.tool()
+def search_json(query: str, max_results: int | None = None, time_range: str | None = None) -> str:
+    """
+    Same as `search` but returns raw results as a JSON array string.
+    Each item has: title, url, content.
+    """
+    results = _do_search(query, max_results, time_range)
+    return json.dumps(results)
+
+
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=8001)
