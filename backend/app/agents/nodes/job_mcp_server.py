@@ -16,7 +16,7 @@ from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
-mcp = FastMCP("search-server")
+mcp = FastMCP("search-server", host="0.0.0.0", port=8001)
 
 
 def _do_search(query: str, max_results: int | None = None, time_range: str | None = None) -> list[dict]:
@@ -77,4 +77,4 @@ def search_json(query: str, max_results: int | None = None, time_range: str | No
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8001)
+    mcp.run(transport="streamable-http")

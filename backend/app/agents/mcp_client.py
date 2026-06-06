@@ -1,65 +1,39 @@
 """
-Thin MCP client — sends JSON-RPC `tools/call` requests to a FastMCP HTTP server.
-
-FastMCP mounts its JSON-RPC handler at POST /mcp (StreamableHTTP transport).
+Thin MCP client — calls tools on a FastMCP StreamableHTTP server.
+Uses the official MCP Python SDK to handle session/protocol lifecycle.
 """
 
-import json
+import asyncio
 import logging
-import httpx
+from concurrent.futures import ThreadPoolExecutor
+
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 log = logging.getLogger(__name__)
 
+_executor = ThreadPoolExecutor(max_workers=4)
 
-def call_mcp_tool(base_url: str, tool_name: str, arguments: dict, timeout: float = 120.0):
+
+async def _call_tool_async(base_url: str, tool_name: str, arguments: dict) -> str:
+    async with streamablehttp_client(f"{base_url}/mcp") as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            log.debug("[mcp_client] → %s/mcp  tool=%r args=%r", base_url, tool_name, arguments)
+            result = await session.call_tool(tool_name, arguments)
+            if not result.content:
+                return ""
+            first = result.content[0]
+            return first.text if hasattr(first, "text") else str(first)
+
+
+def call_mcp_tool(base_url: str, tool_name: str, arguments: dict, timeout: float = 120.0) -> str:
     """
-    Call a single MCP tool over HTTP (StreamableHTTP / JSON-RPC 2.0).
-
-    Returns the first text content item from the tool result.
-    Raises on HTTP error or JSON-RPC error.
+    Call a single MCP tool over StreamableHTTP (sync wrapper).
+    Runs in a fresh thread to avoid conflicts with FastAPI's event loop.
     """
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {"name": tool_name, "arguments": arguments},
-    }
-    log.debug("[mcp_client] → %s/mcp  tool=%r args=%r", base_url, tool_name, arguments)
+    def _run():
+        return asyncio.run(_call_tool_async(base_url, tool_name, arguments))
 
-    response = httpx.post(
-        f"{base_url}/mcp",
-        json=payload,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        timeout=timeout,
-    )
-    response.raise_for_status()
-
-    # FastMCP may return multipart/mixed or plain JSON depending on version;
-    # grab the first JSON object that looks like a JSON-RPC response.
-    body = _parse_jsonrpc_body(response)
-
-    if "error" in body:
-        raise RuntimeError(f"MCP tool error from {tool_name!r}: {body['error']}")
-
-    result = body.get("result", {})
-    content = result.get("content", [])
-    if not content:
-        return ""
-
-    # Return the text of the first content block
-    first = content[0]
-    return first.get("text", "") if isinstance(first, dict) else str(first)
-
-
-def _parse_jsonrpc_body(response: httpx.Response) -> dict:
-    """Handle plain JSON or the first JSON chunk in a multipart/mixed body."""
-    ct = response.headers.get("content-type", "")
-    if "multipart" in ct:
-        # Extract first {...} object from the body
-        text = response.text
-        start = text.find("{")
-        end = text.rfind("}") + 1
-        if start != -1 and end > start:
-            return json.loads(text[start:end])
-        raise ValueError(f"No JSON object found in multipart body: {text[:200]!r}")
-    return response.json()
+    future = _executor.submit(_run)
+    return future.result(timeout=timeout)

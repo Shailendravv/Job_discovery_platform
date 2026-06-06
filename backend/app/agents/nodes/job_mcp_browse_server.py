@@ -20,7 +20,7 @@ from app.core.llm import call_llm
 
 log = logging.getLogger(__name__)
 
-mcp = FastMCP("browser-server")
+mcp = FastMCP("browser-server", host="0.0.0.0", port=8002)
 
 _SETTLE_SECONDS = settings.SETTLE_SECONDS
 _MAX_SNAPSHOT_CHARS = settings.MAX_SNAPSHOT_CHARS
@@ -238,4 +238,4 @@ def extract(url: str, schema: dict, user_id: str = "") -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8002)
+    mcp.run(transport="streamable-http")
