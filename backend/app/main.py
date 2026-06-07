@@ -17,6 +17,13 @@ app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
 @app.on_event("startup")
 async def startup():
     await connect_db()
+    from app.core.config import settings
+    log = logging.getLogger("startup")
+    log.info("=== Search Provider Config ===")
+    log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)
+    log.info("  LINKEDIN_GUEST_API_ENABLED : %r", settings.LINKEDIN_GUEST_API_ENABLED)
+    log.info("  LINKEDIN_GUEST_API_LOCATION: %r", settings.LINKEDIN_GUEST_API_LOCATION)
+    log.info("==============================")
 
 
 @app.on_event("shutdown")

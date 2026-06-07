@@ -26,3 +26,4 @@ class JobResult(BaseModel):
     job_type: str = "unknown"
     posted_date: Optional[str] = None
     salary: Optional[str] = None
+    source: Optional[str] = None

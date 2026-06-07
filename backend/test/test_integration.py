@@ -13,7 +13,7 @@ import sys
 import os
 
 # Add the backend directory to the path so we can import app modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from app.agents.search_provider import provider
 from app.core.config import settings
@@ -48,6 +48,7 @@ async def test_search_provider():
             print(f"\nResult {i}:")
             print(f"  Title: {result.get('title', 'N/A')}")
             print(f"  URL: {result.get('url', 'N/A')}")
+            print(f"  Source: {result.get('source', 'N/A')}")
             print(f"  Content: {result.get('content', 'N/A')[:100]}...")
 
         # Show configuration

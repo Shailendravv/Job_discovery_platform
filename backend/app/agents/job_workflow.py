@@ -363,6 +363,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
             job_type=job_type,
             posted_date=posted_date,
             apply_url=apply_url,
+            source=result.get("source", "unknown"),
         )
         job_dict = job.model_dump()
 
