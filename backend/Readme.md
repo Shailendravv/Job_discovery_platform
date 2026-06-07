@@ -33,11 +33,25 @@ MONGODB_URI=<your-mongodb-uri>
 SEARXNG_URL=http://localhost:8888
 CAMOFOX_URL=http://localhost:9500
 Ollama=http://localhost:11434
+MCP_SEARCH_URL=http://localhost:8001
+MCP_BROWSE_URL=http://localhost:8002
+LLM_PROVIDER=ollama
 SEARCH_MAX_RESULTS=10
 BROWSE_TOP_N=15
 SEARCH_SITES=naukri.com,linkedin.com/jobs,apna.co,indeed.com,instahyre.com,shine.com,foundit.in
 SEARCH_FRESH=true
 SEARCH_CAREERS=false
+
+# LinkedIn Guest API Configuration (optional)
+LINKEDIN_GUEST_API_ENABLED=true
+LINKEDIN_GUEST_API_LOCATION=India
+LINKEDIN_GUEST_API_TIME_RANGE=r86400
+
+# JSearch API (OpenWebNinja) Configuration (optional - requires API key)
+JSEARCH_API_KEY=your_jsearch_api_key_here
+JSEARCH_API_HOST=jsearch.p.rapidapi.com
+JSEARCH_API_LOCATION=India
+JSEARCH_API_DATE_POSTED=today
 ```
 
 Install dependencies:
