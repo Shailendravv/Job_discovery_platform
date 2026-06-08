@@ -44,7 +44,7 @@ class SearchProvider:
         if settings.LINKEDIN_GUEST_API_ENABLED:
             log.info("[provider] LINKEDIN_GUEST_API_ENABLED=%r", settings.LINKEDIN_GUEST_API_ENABLED)
             task = asyncio.create_task(
-                self._search_linkedin_async(query, n),
+                self._search_linkedin_async(query, settings.LINKEDIN_GUEST_API_MAX_RESULTS),
                 name="linkedin_search"
             )
             tasks.append(("linkedin", task))

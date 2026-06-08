@@ -15,5 +15,7 @@ async def search_jobs(request: JobSearchRequest, db=Depends(get_db)):
     """Search jobs. Frontend sends only user_input — all targeting config lives in backend."""
     log.info("[search] user_input=%r", request.user_input)
     results = await search_jobs_workflow(user_input=request.user_input)
-    log.info("[search] returning %d jobs", len(results))
+    linkedin_count = sum(1 for r in results if r.get("source") == "linkedin")
+    searxng_count = sum(1 for r in results if r.get("source") == "searxng")
+    log.info("[search] returning %d jobs (searxng=%d, linkedin=%d)", len(results), searxng_count, linkedin_count)
     return results

@@ -236,153 +236,131 @@ def _is_duplicate(new_title: str, existing_titles: List[str]) -> bool:
     return False
 
 
+def _collect_unique(batch: List[dict], seen_urls: set, seen_titles: List[str]) -> List[dict]:
+    """Filter duplicates by URL and title, mutating seen_urls/seen_titles in place."""
+    out = []
+    for r in batch:
+        url = r.get("url", "")
+        title = r.get("title", "")
+        if not url or url in seen_urls:
+            continue
+        if _is_duplicate(title, seen_titles):
+            continue
+        seen_urls.add(url)
+        seen_titles.append(title)
+        out.append(r)
+    return out
+
+
+def _build_job(result: dict, extracted: dict, snippet: str, base_title: str, url: str) -> dict | None:
+    """Build a JobResult dict from extracted + raw result data. Returns None if unusable."""
+    title = (extracted.get("title") or base_title).strip()
+    description = (extracted.get("description") or snippet).strip()
+    if not title and not description:
+        return None
+    return JobResult(
+        title=title,
+        company=(extracted.get("company") or result.get("company") or "").strip(),
+        location=extracted.get("location") or result.get("location") or None,
+        description=description,
+        url=url or None,
+        skills=extracted.get("skills") or extract_skills_from_text(description),
+        job_type=_categorize_job_type(extracted, description),
+        posted_date=extracted.get("posted_date") or result.get("publishedDate") or None,
+        apply_url=extracted.get("apply_url") or url or None,
+        source=result.get("source", "unknown"),
+    ).model_dump()
+
+
+def _browse_and_build(candidates: List[dict], quota: int, label: str, final_seen_titles: List[str]) -> List[dict]:
+    """Browse up to len(candidates) URLs, collecting up to `quota` valid jobs."""
+    jobs: List[dict] = []
+    for idx, result in enumerate(candidates):
+        if len(jobs) >= quota:
+            break
+        url = result.get("url") or ""
+        snippet = (result.get("description") or result.get("snippet") or result.get("content") or "").strip()
+        base_title = (result.get("title") or result.get("name") or "").strip()
+
+        if not url.startswith(("http://", "https://")):
+            log.warning("[workflow][%s][%d] no valid URL, skipping", label, idx + 1)
+            continue
+
+        extracted: dict = {}
+        try:
+            raw_json = browse_extract(url, JOB_EXTRACT_SCHEMA)
+            extracted = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+            if not extracted or all(v is None for v in extracted.values()):
+                extracted = {}
+        except Exception as exc:
+            log.warning("[workflow][%s][%d] browse_extract failed (%s), falling back to snippet", label, idx + 1, exc)
+
+        final_title = (extracted.get("title") or base_title).strip()
+        if _is_duplicate(final_title, final_seen_titles):
+            log.info("[workflow][%s][%d] duplicate after extraction: %r, skipping", label, idx + 1, final_title)
+            continue
+        final_seen_titles.append(final_title)
+
+        job_dict = _build_job(result, extracted, snippet, base_title, url)
+        if job_dict is None:
+            log.warning("[workflow][%s][%d] no title or description, skipping", label, idx + 1)
+            continue
+
+        log.info("[workflow][%s][%d] job_type=%r title=%r", label, idx + 1, job_dict["job_type"], job_dict["title"])
+        print(f"\n{'='*60}\n[{label.upper()} JOB {len(jobs)+1}/{quota}]")
+        print(json.dumps(job_dict, indent=2, ensure_ascii=False))
+        print("=" * 60)
+        jobs.append(job_dict)
+
+    return jobs
+
+
 async def search_jobs_workflow(user_input: str) -> List[dict]:
     """Entry point called by the API. Accepts plain-text user query only."""
     log.info("[workflow] starting dynamic search for: %s", user_input)
 
     queries = _build_queries_dynamic(user_input)
-    log.debug("[workflow] will run %d queries: %s", len(queries), queries)
+    log.info("[workflow] will run %d queries: %s", len(queries), queries)
 
-    # ── Phase 1: Search — fetch SEARCH_MAX_RESULTS per query, de-dupe by URL ──
-    # Fetch 2N results so we have enough to rank/score
-    search_per_query = settings.SEARCH_MAX_RESULTS * 2
-    browse_top_n = settings.BROWSE_TOP_N
+    searxng_quota = settings.SEARCH_MAX_RESULTS   # e.g. 15 final jobs from SearXNG
+    linkedin_quota = settings.LINKEDIN_GUEST_API_MAX_RESULTS  # e.g. 15 final jobs from LinkedIn
 
     seen_urls: set = set()
-    raw_results: List[dict] = []
     seen_titles: List[str] = []
+    searxng_candidates: List[dict] = []
+    linkedin_candidates: List[dict] = []
 
-    for q in queries:
-        # Use time_range="day" for latest jobs as requested
-        batch = await provider.search(q, num_results=search_per_query, time_range="day")
-        log.info(
-            "[workflow] query=%r fetch_per_query=%d → got %d results",
-            q, search_per_query, len(batch),
-        )
-        for r in batch:
-            url = r.get("url", "")
-            title = r.get("title", "")
-            if url and url not in seen_urls:
-                if _is_duplicate(title, seen_titles):
-                    continue
-                seen_titles.append(title)
-                seen_urls.add(url)
-                raw_results.append(r)
+    # ── Phase 1a: SearXNG — run all queries, collect unique results ───────────
+    if settings.SEARXNG_ENABLED:
+        for q in queries:
+            batch = await provider._search_mcp_async(q, searxng_quota * 2, "day")
+            log.info("[workflow] searxng query=%r → %d raw results", q, len(batch))
+            searxng_candidates.extend(_collect_unique(batch, seen_urls, seen_titles))
+        log.info("[workflow] searxng unique candidates: %d", len(searxng_candidates))
+        searxng_candidates = _rank_and_trim_dynamic(searxng_candidates, user_input, searxng_quota * 2)
 
-    log.info("[workflow] total unique candidates after search: %d", len(raw_results))
+    # ── Phase 1b: LinkedIn — called ONCE with its own quota ───────────────────
+    log.info("[workflow] LINKEDIN_GUEST_API_ENABLED=%r", settings.LINKEDIN_GUEST_API_ENABLED)
+    if settings.LINKEDIN_GUEST_API_ENABLED:
+        log.info("[workflow] calling linkedin with query=%r count=%d", user_input, linkedin_quota * 2)
+        try:
+            batch = await provider._search_linkedin_async(user_input, linkedin_quota * 2)
+            log.info("[workflow] linkedin raw results: %d — sample titles: %s", len(batch), [r.get('title') for r in batch[:3]])
+            unique = _collect_unique(batch, seen_urls, seen_titles)
+            log.info("[workflow] linkedin unique after dedup: %d (dropped %d)", len(unique), len(batch) - len(unique))
+            linkedin_candidates.extend(unique)
+            linkedin_candidates = _rank_and_trim_dynamic(linkedin_candidates, user_input, linkedin_quota * 2)
+        except Exception as e:
+            log.error("[workflow] linkedin phase failed: %s", e, exc_info=True)
 
-    # ── Phase 2: Rank — score by relevance using LLM, keep larger pool to allow skipping bad ones
-    pool_size = browse_top_n * 3
-    raw_results = _rank_and_trim_dynamic(raw_results, user_input, pool_size)
-    log.info("[workflow] browse phase will process up to %d candidates to find %d valid jobs", len(raw_results), browse_top_n)
-
-    jobs: List[dict] = []
+    # ── Phase 2: Browse each source independently up to its quota ─────────────
     final_seen_titles: List[str] = []
+    searxng_jobs = _browse_and_build(searxng_candidates, searxng_quota, "searxng", final_seen_titles)
+    linkedin_jobs = _browse_and_build(linkedin_candidates, linkedin_quota, "linkedin", final_seen_titles)
 
-    for idx, result in enumerate(raw_results):
-        if len(jobs) >= browse_top_n:
-            break
-            
-        url = result.get("url") or ""
-        snippet = (
-            result.get("description")
-            or result.get("snippet")
-            or result.get("content")
-            or ""
-        ).strip()
-        base_title = (result.get("title") or result.get("name") or "").strip()
-
-        extracted: dict = {}
-
-        log.debug(
-            "[workflow] [%d/%d] processing url=%r title=%r",
-            idx + 1,
-            len(raw_results),
-            url,
-            base_title,
-        )
-
-        # ── Auto-browse: fetch + extract structured fields ───────────────────
-        if url.startswith(("http://", "https://")):
-            log.debug("[workflow] [%d] fetching page via camofox: %r", idx + 1, url)
-            try:
-                raw_json = browse_extract(url, JOB_EXTRACT_SCHEMA)
-                extracted = (
-                    json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-                )
-                
-                if not extracted or all(v is None for v in extracted.values()):
-                    log.warning("[workflow] [%d] browse extraction empty, falling back to snippet.", idx + 1)
-                    extracted = {}
-                    
-                log.debug(
-                    "[workflow] [%d] extract succeeded, keys=%s",
-                    idx + 1,
-                    list(extracted.keys()),
-                )
-            except Exception as exc:
-                log.warning(
-                    "[workflow] [%d] browse_extract failed (%s), falling back to snippet",
-                    idx + 1,
-                    exc,
-                )
-        else:
-            log.warning("[workflow] [%d] no valid URL, skipping browse", idx + 1)
-            continue
-            
-        # Dedupe check on final extracted title
-        final_title = (extracted.get("title") or base_title).strip()
-        if _is_duplicate(final_title, final_seen_titles):
-            log.info("[workflow] [%d] duplicate title detected after extraction: %r. Skipping.", idx + 1, final_title)
-            continue
-        final_seen_titles.append(final_title)
-
-        # ── Build final job record ───────────────────────────────────────────
-        title = (extracted.get("title") or base_title).strip()
-        company = (extracted.get("company") or result.get("company") or "").strip()
-        location = extracted.get("location") or result.get("location") or None
-        description = (extracted.get("description") or snippet).strip()
-
-        if not title and not description:
-            log.warning("[workflow] [%d] no title or description, skipping.", idx + 1)
-            continue
-        skills = extracted.get("skills") or extract_skills_from_text(description)
-        job_type = _categorize_job_type(extracted, description)
-        posted_date = (
-            extracted.get("posted_date") or result.get("publishedDate") or None
-        )
-        apply_url = extracted.get("apply_url") or url or None
-
-        job = JobResult(
-            title=title,
-            company=company,
-            location=location,
-            description=description,
-            url=url or None,
-            skills=skills,
-            job_type=job_type,
-            posted_date=posted_date,
-            apply_url=apply_url,
-            source=result.get("source", "unknown"),
-        )
-        job_dict = job.model_dump()
-
-        log.info(
-            "[workflow] [%d] job_type=%r  title=%r  url=%r  posted=%r",
-            idx + 1,
-            job_type,
-            title,
-            url,
-            posted_date,
-        )
-        print(f"\n{'='*60}")
-        print(
-            f"[JOB {idx+1}/{len(raw_results)}]  job_type={job_type!r}  posted={posted_date!r}"
-        )
-        print(json.dumps(job_dict, indent=2, ensure_ascii=False))
-        print("=" * 60)
-
-        jobs.append(job_dict)
-
-    log.info("[workflow] done — %d jobs extracted", len(jobs))
+    jobs = searxng_jobs + linkedin_jobs
+    log.info(
+        "[workflow] done — %d jobs extracted (searxng=%d, linkedin=%d)",
+        len(jobs), len(searxng_jobs), len(linkedin_jobs),
+    )
     return jobs
