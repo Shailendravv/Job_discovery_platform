@@ -26,7 +26,7 @@ _SETTLE_SECONDS = settings.SETTLE_SECONDS
 _MAX_SNAPSHOT_CHARS = settings.MAX_SNAPSHOT_CHARS
 
 # How many chars of the snapshot to send to the LLM — keep low for small models.
-_EXTRACT_SNAPSHOT_CHARS = getattr(settings, "EXTRACT_SNAPSHOT_CHARS", 3000)
+_EXTRACT_SNAPSHOT_CHARS = getattr(settings, "EXTRACT_SNAPSHOT_CHARS", 12000)
 _OLLAMA_TIMEOUT = getattr(settings, "OLLAMA_TIMEOUT", 120)
 
 log.info(
@@ -135,7 +135,7 @@ def _parse_llm_json(raw: str) -> dict:
 # ── core logic (importable directly — Option B) ───────────────────────────────
 
 
-def _do_fetch(url: str, user_id: str = "") -> str:
+def _do_fetch(url: str, user_id: str = "", max_chars: int | None = None) -> str:
     """Fetch a page via camofox and return its snapshot. Importable directly."""
     one_shot = not user_id
     if one_shot:
@@ -164,7 +164,7 @@ def _do_fetch(url: str, user_id: str = "") -> str:
 
     # Basic DOM Sanitization: compress empty lines
     snapshot = re.sub(r"\n\s*\n", "\n", snapshot)
-    result = _truncate(snapshot)
+    result = _truncate(snapshot, max_chars)
     log.info("[mcp:browse] ── _do_fetch END url=%r final_chars=%d", url, len(result))
     return result
 
@@ -177,7 +177,7 @@ def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
         list(schema.get("properties", {}).keys()),
     )
 
-    snapshot = _do_fetch(url, user_id)
+    snapshot = _do_fetch(url, user_id, max_chars=_EXTRACT_SNAPSHOT_CHARS)
     if snapshot.startswith("Error"):
         log.warning("[mcp:browse] _do_extract aborting — fetch failed: %s", snapshot)
         return snapshot
@@ -199,7 +199,9 @@ def _do_extract(url: str, schema: dict, user_id: str = "") -> str:
         "Extract job data from the page snapshot below. "
         "If the page is a login wall, anti-bot challenge, or missing job content, "
         "return a JSON object with all fields set to null. "
-        "Otherwise, return ONLY a JSON object with these exact fields (use null for missing values):\n"
+        "Otherwise, return ONLY a JSON object with these exact fields (use null for missing values).\n"
+        "IMPORTANT: For the 'description' field, return the FULL and COMPLETE job description text. "
+        "Do NOT summarize or truncate it. Include every detail from the original posting.\n"
         f"{field_lines}\n\n"
         f"URL: {url}\n\n"
         f"Page content:\n{trimmed_snapshot}"

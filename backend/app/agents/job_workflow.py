@@ -30,7 +30,7 @@ JOB_EXTRACT_SCHEMA = {
         "location": {"type": "string", "description": "Job location or remote status"},
         "description": {
             "type": "string",
-            "description": "Full job description or summary",
+            "description": "Complete and un-truncated full job description. Do not summarize - include every detail from the original posting.",
         },
         "salary": {"type": "string", "description": "Salary or compensation range"},
         "posted_date": {
@@ -254,7 +254,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
 
     for q in queries:
         # Use time_range="day" for latest jobs as requested
-        batch = provider.search(q, num_results=search_per_query, time_range="day")
+        batch = await provider.search(q, num_results=search_per_query, time_range="day")
         log.info(
             "[workflow] query=%r fetch_per_query=%d → got %d results",
             q, search_per_query, len(batch),

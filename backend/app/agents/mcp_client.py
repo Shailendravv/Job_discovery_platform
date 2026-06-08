@@ -37,3 +37,10 @@ def call_mcp_tool(base_url: str, tool_name: str, arguments: dict, timeout: float
 
     future = _executor.submit(_run)
     return future.result(timeout=timeout)
+
+
+def call_mcp_tool_async(base_url: str, tool_name: str, arguments: dict):
+    """
+    Public async wrapper for MCP tool calls.
+    """
+    return _call_tool_async(base_url, tool_name, arguments)

@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     SEARCH_FRESH: bool = True
     SEARCH_CAREERS: bool = False
     SETTLE_SECONDS: float = 1.5
-    MAX_SNAPSHOT_CHARS: int = 3000
+    MAX_SNAPSHOT_CHARS: int = 12000
     MODEL_NAME: str = "qwen2.5-coder:1.5b"
     MODEL_TEMPERATURE: float = 0.1
 

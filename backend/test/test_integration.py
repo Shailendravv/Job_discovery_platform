@@ -39,7 +39,7 @@ async def test_search_provider():
 
     try:
         # Perform search
-        results = provider.search(test_query, num_results=5)
+        results = await provider.search(test_query, num_results=5)
 
         print(f"\nSearch completed! Found {len(results)} total results:")
         print("-" * 40)
