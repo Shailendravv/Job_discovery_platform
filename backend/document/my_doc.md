@@ -16,3 +16,7 @@ https://build.nvidia.com/models?q=deepseek
 for new session 
 use 
 /clear
+
+
+<!-- Document creation prompt -->
+Analyze all files in documents/. Generate a comprehensive, self-contained PROJECT_CONTEXT.md that enables a user or AI with zero prior knowledge to understand, maintain, and recreate the project from scratch. Document project goals, architecture, folder structure, dependencies, configuration, data flow, APIs, business logic, workflows, setup steps, deployment process, and implementation details. Infer missing context from the available documents and clearly mark assumptions.
