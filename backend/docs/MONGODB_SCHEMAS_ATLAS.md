@@ -1,5 +1,7 @@
 # MongoDB Atlas Database Schemas - Job Search Backend
 
+**Note**: Migrations are implemented in Python (Motor). See `backend/migrations/` for Python migration modules. Use `python scripts/run_migrations.py` to apply them.
+
 **Project**: Job Search API with AI-powered job aggregation and resume tailoring  
 **Database**: `jobapp`  
 **Generated**: 2025-06-09  
@@ -23,15 +25,21 @@
 
 Run these commands immediately in MongoDB Shell or Atlas UI to create the essential collections:
 
-```javascript
-// 1. Create the database
-use jobapp
+```bash
+# 1. Apply all migrations (creates all collections with validation)
+python scripts/run_migrations.py --uri "mongodb+srv://..." --db jobapp
 
-// 2. Create collections with validation (run in order)
-db.createCollection("jobs")
-db.createCollection("resumes")
-db.createCollection("users")
-db.createCollection("applications")
+# 2. Create all indexes (40+)
+python scripts/create_indexes.py --uri "mongodb+srv://..." --db jobapp
+
+# 3. Generate test data (optional)
+python scripts/generate_test_data.py --uri "mongodb+srv://..." --db jobapp --jobs 1000 --users 50
+
+# 4. Check migration status
+python scripts/run_migrations.py --uri "..." --status
+
+# 5. Rollback everything (DESTRUCTIVE)
+python scripts/run_migrations.py --uri "..." --rollback --confirm YES
 ```
 
 ---
@@ -1397,6 +1405,8 @@ exports = async function() {
 
 ## Migration Scripts
 
+**Note**: The production migrations are implemented in Python (see `backend/migrations/`). The JavaScript examples below are provided for reference and are deprecated.
+
 ### Migration 001: Initial Schema Setup
 
 This migration creates all collections with validation rules and indexes.
@@ -2456,16 +2466,16 @@ print(`Inserted ${testUsers.length} test users`);
 ```
 backend/
 ├── migrations/
-│   ├── 001_initial_schema.js
-│   ├── 002_job_denormalization.js
-│   ├── 003_skills_taxonomy.js
-│   ├── 004_company_materialized_view.js
-│   ├── 005_change_streams.js
-│   └── ROLLBACK_001.js
+│   ├── 001_initial_schema.py
+│   ├── 002_job_denormalization.py
+│   ├── 003_skills_taxonomy.py
+│   ├── 004_company_materialized_view.py
+│   ├── 005_change_streams.py
+│   └── ROLLBACK.py
 ├── scripts/
-│   ├── generate_test_data.js
-│   ├── index_maintenance.js
-│   └── backup_restore.js
+│   ├── run_migrations.py         # Migration runner (handles Python migrations)
+│   ├── generate_test_data.py     # Test data generator
+│   └── create_indexes.py         # Python index creation (preferred)
 ├── docs/
 │   └── MONGODB_SCHEMAS_ATLAS.md (this file)
 └── app/core/database.py (updated connection)

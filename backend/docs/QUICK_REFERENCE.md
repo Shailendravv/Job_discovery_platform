@@ -1,22 +1,22 @@
 # MongoDB Atlas Setup - Quick Reference
 
-## One-Line Setup Commands
+## One-Line Setup Commands (Python - Recommended)
 
 ```bash
-# 1. Create database and collections with validation
-mongosh "mongodb+srv://..." jobapp migrations/001_initial_schema.js
-
-# 2. Apply all migrations
+# 1. Apply all migrations (creates collections with validation)
 python scripts/run_migrations.py --uri "mongodb+srv://..." --db jobapp
 
-# 3. Create all indexes
-mongosh "mongodb+srv://..." scripts/create_indexes.js
+# 2. Create all indexes (40+)
+python scripts/create_indexes.py --uri "mongodb+srv://..." --db jobapp
 
-# 4. Generate test data
+# 3. Generate test data (optional)
 python scripts/generate_test_data.py --uri "mongodb+srv://..." --db jobapp --jobs 1000 --users 50
 
+# 4. Check migration status
+python scripts/run_migrations.py --uri "..." --status
+
 # 5. Rollback everything (DESTRUCTIVE)
-mongosh "mongodb+srv://..." migrations/ROLLBACK.js --eval 'confirm="YES"'
+python scripts/run_migrations.py --uri "..." --rollback --confirm YES
 ```
 
 ---
