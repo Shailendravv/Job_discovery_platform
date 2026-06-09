@@ -2,9 +2,11 @@ import logging
 from fastapi import FastAPI
 from app.core.database import connect_db, close_db
 from app.api.v1 import jobs, resumes
+from app.core.config import settings
 
+log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 

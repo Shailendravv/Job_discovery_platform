@@ -28,12 +28,11 @@ class Settings(BaseSettings):
     SEARXNG_ENABLED: bool = False  # Set to True to enable SearXNG search results
 
     # LinkedIn Guest API settings
-    LINKEDIN_GUEST_API_ENABLED: bool = (
-        False  # Set to True to enable LinkedIn Guest API search results
-    )
+    LINKEDIN_GUEST_API_ENABLED: bool
     LINKEDIN_GUEST_API_LOCATION: str = "India"
     LINKEDIN_GUEST_API_TIME_RANGE: str = "r86400"  # Past 24 hours
     LINKEDIN_GUEST_API_MAX_RESULTS: int = 15  # Independent cap for LinkedIn results
+    LOG_LEVEL: str = "INFO"
 
     @property
     def search_sites_list(self) -> List[str]:

@@ -236,18 +236,17 @@ def _is_duplicate(new_title: str, existing_titles: List[str]) -> bool:
     return False
 
 
-def _collect_unique(batch: List[dict], seen_urls: set, seen_titles: List[str]) -> List[dict]:
-    """Filter duplicates by URL and title, mutating seen_urls/seen_titles in place."""
+def _collect_unique_urls_only(batch: List[dict], seen_urls: set) -> List[dict]:
+    """Filter duplicates by URL only, mutating seen_urls in place."""
     out = []
     for r in batch:
         url = r.get("url", "")
-        title = r.get("title", "")
-        if not url or url in seen_urls:
+        apply_url = r.get("apply_url", "")
+        # Use URL as primary dedup key, fallback to apply_url
+        dedup_key = url or apply_url
+        if not dedup_key or dedup_key in seen_urls:
             continue
-        if _is_duplicate(title, seen_titles):
-            continue
-        seen_urls.add(url)
-        seen_titles.append(title)
+        seen_urls.add(dedup_key)
         out.append(r)
     return out
 
@@ -325,8 +324,9 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
     searxng_quota = settings.SEARCH_MAX_RESULTS   # e.g. 15 final jobs from SearXNG
     linkedin_quota = settings.LINKEDIN_GUEST_API_MAX_RESULTS  # e.g. 15 final jobs from LinkedIn
 
-    seen_urls: set = set()
-    seen_titles: List[str] = []
+    # Separate dedup contexts per source (URLs only)
+    searxng_seen_urls: set = set()
+    linkedin_seen_urls: set = set()
     searxng_candidates: List[dict] = []
     linkedin_candidates: List[dict] = []
 
@@ -335,7 +335,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
         for q in queries:
             batch = await provider._search_mcp_async(q, searxng_quota * 2, "day")
             log.info("[workflow] searxng query=%r → %d raw results", q, len(batch))
-            searxng_candidates.extend(_collect_unique(batch, seen_urls, seen_titles))
+            searxng_candidates.extend(_collect_unique_urls_only(batch, searxng_seen_urls))
         log.info("[workflow] searxng unique candidates: %d", len(searxng_candidates))
         searxng_candidates = _rank_and_trim_dynamic(searxng_candidates, user_input, searxng_quota * 2)
 
@@ -346,7 +346,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
         try:
             batch = await provider._search_linkedin_async(user_input, linkedin_quota * 2)
             log.info("[workflow] linkedin raw results: %d — sample titles: %s", len(batch), [r.get('title') for r in batch[:3]])
-            unique = _collect_unique(batch, seen_urls, seen_titles)
+            unique = _collect_unique_urls_only(batch, linkedin_seen_urls)
             log.info("[workflow] linkedin unique after dedup: %d (dropped %d)", len(unique), len(batch) - len(unique))
             linkedin_candidates.extend(unique)
             linkedin_candidates = _rank_and_trim_dynamic(linkedin_candidates, user_input, linkedin_quota * 2)
