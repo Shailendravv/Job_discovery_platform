@@ -15,7 +15,7 @@ from datetime import datetime
 
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
-    from pymongo.errors import PyMongoError
+    from pymongo.errors import CollectionInvalid, PyMongoError
 except ImportError:
     print("Error: Required packages not installed.")
     print("Run: pip install pymongo motor")
@@ -80,16 +80,13 @@ class Migration005:
         try:
             await db.create_collection("change_stream_checkpoints")
             await db.change_stream_checkpoints.create_index(
-                [("_id", 1)],
+                [("stream_name", 1)],
                 unique=True,
-                name="idx_cs_checkpoint_id"
+                name="idx_cs_checkpoint_stream"
             )
             print("  ✓ Created checkpoint collection with index\n")
-        except PyMongoError as e:
-            if e.code == 48:  # NamespaceExists
-                print("  ⚡ Collection already exists")
-            else:
-                raise
+        except (CollectionInvalid, PyMongoError):
+            print("  ⚡ Collection already exists")
 
         # Step 2: Create configs collection
         print("Step 2: Creating change_stream_configs collection...")
@@ -105,11 +102,8 @@ class Migration005:
                 name="idx_cs_config_active"
             )
             print("  ✓ Created configs collection with indexes")
-        except PyMongoError as e:
-            if e.code == 48:
-                print("  ⚡ Collection already exists")
-            else:
-                raise
+        except (CollectionInvalid, PyMongoError):
+            print("  ⚡ Collection already exists")
 
         # Step 3: Insert configuration documents
         print("\nStep 3: Inserting change stream configurations...")
@@ -251,7 +245,7 @@ class ChangeStreamWorker:
         """Record this migration."""
         now = datetime.utcnow()
         try:
-            await db._migrations.insert_one({
+            await db["_migrations"].insert_one({
                 "migration": self.name,
                 "version": self.version,
                 "applied_at": now,

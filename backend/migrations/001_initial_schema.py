@@ -75,7 +75,7 @@ JOBS_SCHEMA = {
             },
             "source_id": {"bsonType": "string"},
             "user_id": {"bsonType": ["string", "null"]},
-            "is_saved": {"bsonType": "bool", "default": False},
+            "is_saved": {"bsonType": "bool"},
             "match_score": {
                 "bsonType": ["int", "null"],
                 "minimum": 0,
@@ -158,11 +158,10 @@ RESUMES_SCHEMA = {
                 }
             },
             "processing_status": {
-                "enum": ["pending", "processing", "completed", "failed"],
-                "default": "pending"
+                "enum": ["pending", "processing", "completed", "failed"]
             },
             "processing_error": {"bsonType": "string"},
-            "schema_version": {"bsonType": "int", "default": 1},
+            "schema_version": {"bsonType": "int"},
             "created_at": {"bsonType": "date"},
             "updated_at": {"bsonType": "date"}
         }
@@ -183,7 +182,7 @@ USERS_SCHEMA = {
                 "bsonType": "string",
                 "pattern": "^[^@]+@[^@]+\\.[^@]+$"
             },
-            "email_verified": {"bsonType": "bool", "default": False},
+            "email_verified": {"bsonType": "bool"},
             "username": {
                 "bsonType": "string",
                 "minLength": 3,
@@ -216,7 +215,7 @@ USERS_SCHEMA = {
             "preferences": {
                 "bsonType": "object",
                 "properties": {
-                    "notifications_enabled": {"bsonType": "bool", "default": True},
+                    "notifications_enabled": {"bsonType": "bool"},
                     "preferred_job_types": {
                         "bsonType": "array",
                         "items": {
@@ -233,10 +232,9 @@ USERS_SCHEMA = {
                 }
             },
             "role": {
-                "enum": ["user", "admin", "moderator"],
-                "default": "user"
+                "enum": ["user", "admin", "moderator"]
             },
-            "is_active": {"bsonType": "bool", "default": True},
+            "is_active": {"bsonType": "bool"},
             "last_login_at": {"bsonType": ["date", "null"]},
             "created_at": {"bsonType": "date"},
             "updated_at": {"bsonType": "date"}
@@ -287,7 +285,7 @@ APPLICATIONS_SCHEMA = {
                     }
                 }
             },
-            "is_deleted": {"bsonType": "bool", "default": False},
+            "is_deleted": {"bsonType": "bool"},
             "deleted_at": {"bsonType": ["date", "null"]}
         }
     }
@@ -323,7 +321,7 @@ COMPANIES_SCHEMA = {
                 "maximum": 2025
             },
             "linkedin_company_id": {"bsonType": "string"},
-            "job_count": {"bsonType": "int", "minimum": 0, "default": 0},
+            "job_count": {"bsonType": "int", "minimum": 0},
             "last_job_posted": {"bsonType": ["date", "null"]},
             "created_at": {"bsonType": "date"},
             "updated_at": {"bsonType": "date"}
@@ -350,10 +348,10 @@ SKILLS_SCHEMA = {
                     "methodology", "certification", "testing"
                 ]
             },
-            "subcategory": {"bsonType": "string", "maxLength": 100},
+            "subcategory": {"bsonType": ["string", "null"], "maxLength": 100},
             "synonyms": {"bsonType": "array", "items": {"bsonType": "string"}},
             "popularity": {"bsonType": "int", "minimum": 0},
-            "is_active": {"bsonType": "bool", "default": True},
+            "is_active": {"bsonType": "bool"},
             "created_at": {"bsonType": "date"},
             "updated_at": {"bsonType": "date"}
         }
@@ -486,7 +484,7 @@ MIGRATIONS_COLLECTION_SCHEMA = {
             "version": {"bsonType": "int"},
             "applied_at": {"bsonType": "date"},
             "checksum": {"bsonType": "string"},
-            "rolled_back": {"bsonType": "bool", "default": False},
+            "rolled_back": {"bsonType": "bool", "description": "Whether this migration was rolled back"},
             "rolled_back_at": {"bsonType": ["date", "null"]}
         }
     }
@@ -539,7 +537,7 @@ class Migration001:
 
                 # For migrations collection, create unique index
                 if collection_name == "_migrations":
-                    await db._migrations.create_index(
+                    await db["_migrations"].create_index(
                         "migration",
                         unique=True,
                         name="idx_migrations_name"
@@ -560,11 +558,13 @@ class Migration001:
         """Record that this migration was applied."""
         now = datetime.utcnow()
         try:
-            await db._migrations.insert_one({
+            await db["_migrations"].insert_one({
                 "migration": self.name,
                 "version": self.version,
                 "applied_at": now,
-                "checksum": "COMPUTED_DURING_DEPLOYMENT"
+                "checksum": "COMPUTED_DURING_DEPLOYMENT",
+                "rolled_back": False,
+                "rolled_back_at": None
             })
             print(f"\n╔════════════════════════════════════════════════════════════════╗")
             print(f"║  Migration 001 Complete: {created_count} collections created  ║")

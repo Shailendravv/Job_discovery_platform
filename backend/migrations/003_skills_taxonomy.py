@@ -12,11 +12,13 @@ Run with:
 """
 
 import asyncio
+import re
 import sys
 from datetime import datetime
 
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
+    from pymongo import UpdateOne
     from pymongo.errors import PyMongoError
 except ImportError:
     print("Error: Required packages not installed.")
@@ -171,7 +173,7 @@ class Migration003:
 
     def normalize_name(self, name: str) -> str:
         """Normalize skill name for unique indexing."""
-        return name.lower().replace(/[^a-z0-9]/g, '')
+        return re.sub(r'[^a-z0-9]', '', name.lower())
 
     async def run(self, db):
         print(f"\n╔════════════════════════════════════════════════════════════════╗")
@@ -180,30 +182,57 @@ class Migration003:
 
         now = datetime.utcnow()
 
+        # Patch skills validator to allow null subcategory
+        try:
+            await db.command("collMod", "skills", validator={
+                "$jsonSchema": {
+                    "bsonType": "object",
+                    "required": ["name", "category"],
+                    "properties": {
+                        "name": {"bsonType": "string", "minLength": 1, "maxLength": 100},
+                        "name_normalized": {"bsonType": "string"},
+                        "category": {
+                            "enum": [
+                                "programming_language", "framework", "database", "cloud", "devops",
+                                "frontend", "backend", "mobile", "data_science", "design",
+                                "project_management", "soft_skill", "tool", "platform",
+                                "methodology", "certification", "testing"
+                            ]
+                        },
+                        "subcategory": {"bsonType": ["string", "null"], "maxLength": 100},
+                        "synonyms": {"bsonType": "array", "items": {"bsonType": "string"}},
+                        "popularity": {"bsonType": "int", "minimum": 0},
+                        "is_active": {"bsonType": "bool"},
+                        "created_at": {"bsonType": "date"},
+                        "updated_at": {"bsonType": "date"}
+                    }
+                }
+            }, validationLevel="moderate", validationAction="error")
+            print("  \u2713 Patched skills validator (subcategory now allows null)")
+        except Exception as e:
+            print(f"  \u26a0 Could not patch validator: {e}")
+
         # Step 1: Insert/update taxonomy
         print("Step 1: Inserting initial skills taxonomy...")
         bulk_ops = []
 
         for skill in SKILLS_TAXONOMY:
             name_normalized = skill["name"].lower().strip()
-            bulk_ops.append({
-                "update_one": {
-                    "filter": {"name_normalized": name_normalized},
-                    "update": {
-                        "$setOnInsert": {
-                            "name": skill["name"],
-                            "name_normalized": name_normalized,
-                            "category": skill["category"],
-                            "subcategory": None,
-                            "synonyms": skill.get("synonyms", []),
-                            "is_active": True,
-                            "created_at": now
-                        },
-                        "$set": {"updated_at": now}
+            bulk_ops.append(UpdateOne(
+                {"name_normalized": name_normalized},
+                {
+                    "$setOnInsert": {
+                        "name": skill["name"],
+                        "name_normalized": name_normalized,
+                        "category": skill["category"],
+                        "synonyms": skill.get("synonyms", []),
+                        "is_active": True,
+                        "created_at": now
                     },
-                    "upsert": True
-                }
-            })
+                    "$set": {"updated_at": now}
+                },
+                upsert=True
+            ))
 
         if bulk_ops:
             result = await db.skills.bulk_write(bulk_ops, ordered=False)
@@ -239,29 +268,27 @@ class Migration003:
                 if not skill_name or len(skill_name) > 100:
                     continue
 
-                name_normalized = skill_name.replace(/[^a-z0-9]/g, '')
+                name_normalized = re.sub(r'[^a-z0-9]', '', skill_name)
                 if not name_normalized:
                     continue
 
-                additional_ops.append({
-                    "update_one": {
-                        "filter": {"name_normalized": name_normalized},
-                        "update": {
-                            "$setOnInsert": {
-                                "name": skill_name,
-                                "name_normalized": name_normalized,
-                                "category": "tool",
-                                "is_active": True,
-                                "created_at": now2
-                            },
-                            "$set": {
-                                "updated_at": now2,
-                                "popularity": skill_doc["count"]
-                            }
+                additional_ops.append(UpdateOne(
+                    {"name_normalized": name_normalized},
+                    {
+                        "$setOnInsert": {
+                            "name": skill_name,
+                            "name_normalized": name_normalized,
+                            "category": "tool",
+                            "is_active": True,
+                            "created_at": now2
                         },
-                        "upsert": True
-                    }
-                })
+                        "$set": {
+                            "updated_at": now2,
+                            "popularity": skill_doc["count"]
+                        }
+                    },
+                    upsert=True
+                ))
 
                 if len(additional_ops) >= batch_size:
                     await db.skills.bulk_write(additional_ops, ordered=False)
@@ -333,7 +360,7 @@ class Migration003:
         """Record this migration."""
         now = datetime.utcnow()
         try:
-            await db._migrations.insert_one({
+            await db["_migrations"].insert_one({
                 "migration": self.name,
                 "version": self.version,
                 "applied_at": now,

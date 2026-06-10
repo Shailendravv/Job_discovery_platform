@@ -109,3 +109,4 @@ backend/
 ├── requirements.txt
 └── .env
 ```
+python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp

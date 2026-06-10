@@ -156,7 +156,7 @@ class Migration004:
         """Record this migration."""
         now = datetime.utcnow()
         try:
-            await db._migrations.insert_one({
+            await db["_migrations"].insert_one({
                 "migration": self.name,
                 "version": self.version,
                 "applied_at": now,
