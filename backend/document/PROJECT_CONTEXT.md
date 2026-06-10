@@ -1,6 +1,9 @@
-# Job Search Backend - Complete Project Context
+# Job Search Backend - Project Context (Minimal Schema)
 
-**Purpose:** This document provides a comprehensive, self-contained reference for understanding, maintaining, and recreating the job search backend from scratch. It covers project goals, architecture, data flow, APIs, configuration, and implementation details.
+**Purpose:** This document provides a simplified reference for the current production-ready state of the job search backend. It covers the minimal schema and active features.
+
+**Last Updated:** 2026-06-10
+**Schema Version:** 6 (minimal schema after unused collection cleanup)
 
 ---
 
@@ -29,12 +32,13 @@
 
 This is a **Job Search Backend API** that aggregates job listings from multiple sources (SearXNG search, LinkedIn Guest API), fetches full job descriptions using a headless browser, and extracts structured fields using a Local LLM (Ollama). The system combines traditional web scraping with modern AI-powered data extraction to provide enriched job results.
 
-**Key Characteristics:**
+**Current Scope (Minimal Schema):**
 - **Multi-source aggregation**: SearXNG (proxied Google/Bing/etc.) + LinkedIn Guest API
 - **Automated browsing**: Uses camofox (headless browser) to fetch full job pages
 - **LLM extraction**: Uses Ollama to extract structured data (title, company, salary, skills, etc.)
 - **MCP integration**: Exposes tools via Model Context Protocol for agent orchestration
 - **Async-first**: Built with FastAPI and async/await patterns throughout
+- **Minimal persistence**: Only `jobs` and `resumes` collections in MongoDB
 
 ---
 
@@ -95,13 +99,56 @@ This is a **Job Search Backend API** that aggregates job listings from multiple 
 |-----------|---------|---------|
 | **API Router** | `app/api/v1/jobs.py` | Exposes `/search` endpoint, calls workflow |
 | **Workflow** | `app/agents/job_workflow.py` | Orchestrates search → browse → extract pipeline |
-| **SearchProvider** | `app/agents/search_provider.py` | Aggregates results from multiple search sources |
+| **SearchProvider** | `app/agents/search_provider.py` | Search backend abstraction, concurrent source execution |
 | **MCP Server** | `app/agents/nodes/job_mcp_server.py` | Exposes `search` and `search_json` tools via MCP |
 | **Tools Layer** | `app/agents/tools/` | Individual tools: `web_search`, `browse_extract`, `extract_skills` |
 | **MCP Client** | `app/agents/mcp_client.py` | Connects to MCP servers over Streamable HTTP |
 | **Config** | `app/core/config.py` | Settings loaded from `.env` |
-| **LLM** | `app/core/llm.py` | Wrapper for Ollama/Groq/Gemini providers |
+| **LLM** | `app/core/llm.py` | LLM provider abstraction with threading timeout |
 | **Database** | `app/core/database.py` | MongoDB async connection (Motor) |
+
+### Minimal Database Schema
+
+Only 3 collections are actively used:
+
+#### `jobs` Collection
+Main job listings with extracted data.
+
+**Key fields:**
+- `title`, `company`, `description` (required)
+- `location`, `url`, `apply_url`, `salary`
+- `skills` (array of strings)
+- `job_type` (enum: full-time, part-time, contract, internship, freelance, remote, on-site, hybrid, unknown)
+- `posted_date`, `posted_date_parsed` (date)
+- `source` (enum: searxng, linkedin, indeed, glassdoor, greenhouse, lever, unknown)
+- `source_id`, `user_id`, `is_saved`, `match_score`, `matched_skills`, `missing_skills`
+- `dedup_hash` (SHA256 for deduplication)
+- `company_normalized` (lowercase trimmed for grouping)
+- `search_query` (query that found this job)
+- `created_at`, `updated_at` (timestamps)
+
+#### `resumes` Collection
+Resume data for future matching feature.
+
+**Key fields:**
+- `resume_id`, `user_id` (required)
+- `filename`, `content_type`, `file_size`
+- `extracted_text`, `extracted_text_length`
+- `parsed_data` (object with name, email, phone, education, experience, skills, languages, certifications)
+- `processing_status` (pending, processing, completed, failed)
+- `processing_error`, `schema_version`
+- `created_at`, `updated_at`
+
+#### `_migrations` Collection
+Tracks applied database migrations.
+
+**Key fields:**
+- `migration` (string, unique)
+- `version` (int)
+- `applied_at` (date)
+- `checksum` (string)
+- `rolled_back` (bool)
+- `rolled_back_at` (date, optional)
 
 ---
 
@@ -118,7 +165,7 @@ backend/
 │   │   └── v1/
 │   │       ├── __init__.py
 │   │       ├── jobs.py                  # POST /api/v1/jobs/search
-│   │       └── resumes.py               # Resume-related endpoints (TBD)
+│   │       └── resumes.py               # Resume-related endpoints (reserved)
 │   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── job_workflow.py              # Main search+browse workflow
@@ -126,8 +173,7 @@ backend/
 │   │   ├── search_provider.py           # Search backend aggregator
 │   │   ├── nodes/
 │   │   │   ├── __init__.py
-│   │   │   ├── job_mcp_server.py        # MCP server (search tools)
-│   │   │   ├── job_orchestrator.py      # CLI agent (interactive)
+│   │   │   ├── job_mcp_server.py        # MCP server exposing search_json tool
 │   │   │   └── search_jobs.py           # Original node (deprecated)
 │   │   └── tools/
 │   │       ├── __init__.py
@@ -138,24 +184,18 @@ backend/
 │   │   ├── config.py                    # Settings (BaseSettings)
 │   │   ├── database.py                  # MongoDB connection
 │   │   └── llm.py                       # LLM provider wrapper
-│   └── models/
-│       ├── __init__.py
-│       └── job.py                       # Pydantic models (JobSearchRequest, JobResult)
+│   └── services/
+│       ├── db_service.py                # Database operations (jobs, resumes)
+│       └── PDF_service.py               # PDF processing (reserved)
 ├── services/
 │   └── docker-compose.yml               # camofox + searxng containers
-├── document/                            # Project documentation
-│   ├── backend_job_search_workflow.md
-│   ├── mcp_search_integration.md
-│   ├── backend_job_search_and_mcp_workflow.md
-│   ├── backend_job_search_and_mcp_workflow_04_06_26.md
-│   ├── backend_job_search_and_mcp_workflow_06_06_26.md
-│   ├── backend_job_search_and_mcp_workflow_07_06_26.md
-│   └── backend_job_search_mcp_workflow_09_06_26.md
-├── .env                                # Environment variables (create from template)
-├── .gitignore
-├── README.md
+├── migrations/                          # Database migrations
+│   ├── 001_initial_schema.py           # Creates collections with validation
+│   └── 006_cleanup_unused_collections.py  # Removed unused collections
+├── scripts/
+│   └── list_unused_collections.py      # Preview which collections are unused
 ├── requirements.txt
-└── PROJECT_CONTEXT.md                  # This file
+└── .env
 ```
 
 ---
@@ -167,16 +207,11 @@ backend/
 ```
 fastapi                    # Web framework
 uvicorn[standard]         # ASGI server
-python-dotenv             # .env loading (note: pydantic-settings also loads .env)
+python-dotenv             # .env loading
 motor                     # Async MongoDB driver
-pydantic-settings         # Settings management with env var support
+pydantic-settings         # Settings management
 python-multipart          # Form data parsing
-langchain                 # (unused? reserved for future)
-langchain-openai          # (unused? reserved for future)
-langgraph                 # (unused? reserved for future)
 httpx                     # Async HTTP client
-pypdf                     # PDF processing (reserved)
-reportlab                 # PDF generation (reserved)
 ollama                    # Ollama Python client
 mcp                       # Model Context Protocol Python SDK
 ```
@@ -185,10 +220,10 @@ mcp                       # Model Context Protocol Python SDK
 
 | Service | Default URL | Purpose | Status Required |
 |---------|-------------|---------|-----------------|
-| **SearXNG** | `http://localhost:8888` | Privacy-respecting meta-search engine (returns JSON API) | Required if `SEARXNG_ENABLED=true` |
-| **camofox** | `http://localhost:9500` | Headless browser wrapper exposing accessibility tree snapshots | Required (always called) |
-| **Ollama** | `http://localhost:11434` | Local LLM for data extraction and query generation | Required |
-| **MongoDB** | Configured via `MONGODB_URI` | Optional persistence layer | Optional |
+| **SearXNG** | `http://localhost:8888` | Privacy-respecting meta-search engine | Required if `SEARXNG_ENABLED=true` |
+| **camofox** | `http://localhost:9500` | Headless browser wrapper | Required |
+| **Ollama** | `http://localhost:11434` | Local LLM for data extraction | Required |
+| **MongoDB** | `MONGODB_URI` | Optional persistence layer | Optional |
 
 ### Docker Images
 
@@ -223,8 +258,8 @@ Ollama=http://localhost:11434
 LLM_PROVIDER=ollama                # Options: ollama, groq, gemini
 MODEL_NAME=qwen2.5-coder:1.5b
 MODEL_TEMPERATURE=0.1
-GROQ_API_KEY=                     # Required if LLM_PROVIDER=groq
-GEMINI_API_KEY=                   # Required if LLM_PROVIDER=gemini
+GROQ_API_KEY=
+GEMINI_API_KEY=
 
 # Search Configuration
 SEARCH_MAX_RESULTS=15             # Max results per source before ranking
@@ -237,17 +272,14 @@ MAX_SNAPSHOT_CHARS=12000          # Max chars from accessibility tree
 
 # Feature Toggles
 SEARXNG_ENABLED=false             # Set to true to enable SearXNG search
-LINKEDIN_GUEST_API_ENABLED=true  # Set to true to enable LinkedIn
+LINKEDIN_GUEST_API_ENABLED=false # Set to true to enable LinkedIn (must be explicit)
 LINKEDIN_GUEST_API_LOCATION=India
-LINKEDIN_GUEST_API_TIME_RANGE=r86400  # Past 24 hours (r86400, r604800, etc.)
+LINKEDIN_GUEST_API_TIME_RANGE=r86400  # Past 24 hours
 LINKEDIN_GUEST_API_MAX_RESULTS=15
-LINKEDIN_MAX_RESULTS=15           # Alias for above (see note*)
 
 # Operations
 LOG_LEVEL=INFO                    # DEBUG, INFO, WARNING, ERROR
 ```
-
-***Note:** There is inconsistency in the codebase: `LINKEDIN_GUEST_API_MAX_RESULTS` is defined in config.py but `LINKEDIN_MAX_RESULTS` is referenced in `job_workflow.py`. The actual used value is `settings.LINKEDIN_GUEST_API_MAX_RESULTS` after the latest fixes.
 
 ### Settings Summary (config.py)
 
@@ -294,7 +326,7 @@ class Settings(BaseSettings):
 
 ## 7. Data Flow
 
-### Search Request Flow (Current - 2026-06-09)
+### Search Request Flow (Current - 2026-06-10)
 
 ```
 POST /api/v1/jobs/search
@@ -641,15 +673,15 @@ call_llm(prompt, json_format=True)
    MONGODB_URI=mongodb://localhost:27017
    SEARXNG_URL=http://localhost:8888
    CAMOFOX_URL=http://localhost:9500
-   
+
    # Enable search sources
    SEARXNG_ENABLED=true
    LINKEDIN_GUEST_API_ENABLED=true
-   
+
    # Optional: adjust quotas
    SEARCH_MAX_RESULTS=15
    LINKEDIN_GUEST_API_MAX_RESULTS=15
-   
+
    # Logging
    LOG_LEVEL=INFO
    ```
@@ -726,6 +758,7 @@ Production Load Balancer
 | `app/core/llm.py` | 72 | LLM provider abstraction with threading timeout |
 | `app/core/config.py` | 50 | Settings management |
 | `app/api/v1/jobs.py` | 22 | REST endpoint |
+| `app/services/db_service.py` | 19 | Database operations for jobs and resumes |
 
 ### Critical Code Patterns
 
@@ -769,9 +802,8 @@ queries = json.loads(raw[start:end+1])
 
 1. **Browsing bottleneck**: Each job URL is browsed sequentially within a source. Consider `asyncio.gather` for parallel browsing (with rate limiting).
 2. **LinkedIn rate limiting**: No retry/backoff logic. LinkedIn may block after rapid requests.
-3. **MongoDB unused**: Connection established but no writes implemented.
+3. **MongoDB optional**: Connection established but writes only happen if `save_jobs()` is called (not currently invoked by workflow).
 4. **CAMOFOX_URL not used directly**: Only used through MCP client; config possibly redundant.
-5. **Inconsistent variable naming**: `LINKEDIN_MAX_RESULTS` vs `LINKEDIN_GUEST_API_MAX_RESULTS`.
 
 ---
 
@@ -807,14 +839,8 @@ queries = json.loads(raw[start:end+1])
 
 ## 15. Future Improvements
 
-### From Latest Documentation (09_06_26)
+### Potential Enhancements
 
-**Planned:**
-1. Add `browse` MCP tool to complete the search → browse → extract chain entirely through MCP
-2. MongoDB persistence with collection per job_type or single collection with filter
-3. Support for more search sources (JSearch API already referenced but not integrated)
-
-**Potential Enhancements:**
 - Parallelize browsing within sources (currently sequential)
 - Add caching layer (Redis) to avoid re-extracting same URLs
 - Implement paywall bypass strategies for locked job descriptions
@@ -822,62 +848,43 @@ queries = json.loads(raw[start:end+1])
 - Webhooks for async result delivery
 - Rate limiting and quota management
 - Better error reporting to clients (currently swallowed on browse failures)
+- MongoDB persistence integration (save_jobs should be called in workflow)
+
+### Schema Evolution
+
+If you need any of the removed collections in the future:
+- `users` - for authentication and user management
+- `applications` - for job application tracking
+- `skills` - for skill taxonomy and popularity tracking
+- `companies` - for company profiles and analytics
+- `searchHistory` - for search history and analytics
+- `jobMatches` - for resume-to-job matching
+- Change streams - for real-time event processing
+- `jobs_company_summary` - for pre-aggregated company statistics
+
+These can be re-added by creating new migration files that create and populate these collections.
 
 ---
 
 ## 16. Assumptions & Inferred Context
 
-### Assumptions Made During Documentation
+### Assumptions
 
-1. **MongoDB is optional** - The `get_db` dependency is injected but not used. The codebase appears to be transitioning toward MongoDB persistence but it's not required for basic operation.
+1. **MongoDB is optional** - The connection is established but writes only happen if explicitly called. The `save_jobs()` function exists but is not invoked in the main workflow.
+2. **camofox port** - Docker maps to `9500`. Earlier docs mentioned `3000` but configurable via `CAMOFOX_URL`.
+3. **MCP browse server** - The `browse_jobs.py` tool calls `MCP_BROWSE_URL` with `fetch`/`extract` tools. The server implementation should exist as a separate process.
+4. **No user system** - The removal of `users`, `applications`, etc. confirms this is a single-user or service-to-service API without authentication.
+5. **Skills stored inline** - Rather than using a separate `skills` taxonomy, the current approach stores skills as arrays in job documents. This is simpler but prevents skill-level analytics.
 
-2. **camofox port changed** - Earlier docs mention `CAMOFOX_URL=http://localhost:3000` but current `docker-compose.yml` maps to `9500`. The code uses whatever is configured, so documentation reflects configurable nature.
+### Migration History
 
-3. **JSEARCH_API not integrated** - The `.env.template` includes JSearch API variables but there's no implementation in `SearchProvider`. This is planned but not yet done.
+- **001_initial_schema**: Created all collections with validation (original full schema)
+- **006_cleanup_unused_collections**: Dropped 9 collections not in use (schema reduced to 3 core collections)
 
-4. **MCP browse server exists** - The `browse_jobs.py` tool calls `MCP_BROWSE_URL` with `fetch`/`extract` tools. The server implementation (`job_mcp_browse_server.py`) is referenced in older docs but not in current tree. It may be needed or the tools may call camofox directly. *Assumption: The MCP browse server exists or will be created.*
-
-5. **LLM thread model** - `llm.py` uses `threading.Thread` to call blocking Ollama client, preventing FastAPI event loop blocking. This is correct but unusual for async code; consider using `asyncio.to_thread` in future.
-
-6. **Search sites list** - `SEARCH_SITES` default is corporate ATS platforms (Greenhouse, Lever, Workday), not job boards. This suggests targeting company career pages rather than aggregate job boards.
-
-7. **LinkedIn Guest API stability** - The implementation scrapes HTML which can break if LinkedIn changes their page structure. No official API key required, but fragile.
-
-### Clarifications for New Developers
-
-- **Why two MCP servers?** The original design separated search and browse concerns. The `search_provider.py` currently calls `_do_search()` directly (Option B) instead of via MCP subprocess (Option A). See `mcp_search_integration.md` for rationale.
-- **Where is the browse MCP server?** Referenced but not found in current file tree. It may need to be created following `job_mcp_server.py` pattern, or `browse_jobs.py` may call camofox directly through MCP client to a separate process.
-- **What's the difference between `job_workflow.py` and `search_jobs.py` (in nodes)?** The former is the new unified workflow; the latter is a node for the older LangGraph-based agent system. The node is kept for reference but not used by the API.
+Current active schema: `jobs`, `resumes`, `_migrations` only.
 
 ---
 
-## Appendix
-
-### Quick Reference: Environment Variables
-
-| Variable | Required | Default | Purpose |
-|----------|----------|---------|---------|
-| `MONGODB_URI` | Yes | - | MongoDB connection string |
-| `SEARXNG_URL` | Yes | - | SearXNG instance URL |
-| `CAMOFOX_URL` | Yes | - | camofox browser server URL |
-| `SEARXNG_ENABLED` | No | `false` | Enable/disable SearXNG source |
-| `LINKEDIN_GUEST_API_ENABLED` | No | (must set) | Enable/disable LinkedIn source |
-| `SEARCH_MAX_RESULTS` | No | `15` | Final jobs per source |
-| `LINKEDIN_GUEST_API_MAX_RESULTS` | No | `15` | Max LinkedIn results |
-| `LOG_LEVEL` | No | `INFO` | Logging level |
-
-### File Modification Tracker (Current as of 2026-06-09)
-
-Based on `backend_job_search_mcp_workflow_09_06_26.md`:
-
-| File | Status | Change Summary |
-|------|--------|----------------|
-| `app/agents/job_workflow.py` | Modified | Fixed dedup: per-source URL sets, title dedup deferred, added `_collect_unique_urls_only()` |
-| `app/core/config.py` | Modified | Removed default `False` from `LINKEDIN_GUEST_API_ENABLED`, added `LOG_LEVEL` |
-| `app/main.py` | Modified | Configurable log level via settings |
-
----
-
-**Document Version:** 1.0  
-**Last Updated:** 2026-06-09  
-**Based on:** Backend codebase analysis + all `document/*.md` files
+**Document Version:** 2.0 (minimal schema)
+**Last Updated:** 2026-06-10
+**Based on:** Codebase analysis + cleanup decisions

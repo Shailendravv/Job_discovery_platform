@@ -61,6 +61,86 @@ pip install -r requirements.txt
 
 ---
 
+## Database Migrations
+
+The project uses a migration system to manage MongoDB schema evolution. Migrations are stored in the `migrations/` directory and tracked in the `_migrations` collection.
+
+### Available Migrations
+
+- **Migration 001**: Initial schema setup - creates all collections with JSON schema validation
+- **Migration 006**: Cleanup unused collections - removes collections not needed by current app
+
+> Note: Migrations 002-005 were removed as they created features not in use (user auth, application tracking, skills taxonomy, company summaries, change streams). See `document/PROJECT_CONTEXT.md` for details.
+
+### Running Migrations
+
+#### Recommended: Use the Migration Runner (Automated)
+
+The `run_migrations.py` script automatically discovers and applies all pending migrations in order:
+
+```bash
+# Apply all pending migrations
+python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp
+
+# Show migration status (what's applied vs pending)
+python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp --status
+
+# List all available migrations
+python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp --list
+
+# Rollback all migrations (destructive!)
+python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp --rollback
+```
+
+The runner will:
+- Load all `.py` migration files from `migrations/` (sorted by filename)
+- Check which migrations are already applied in `_migrations` collection
+- Prompt for confirmation before applying pending ones
+- Execute them sequentially and record each application
+
+#### Manual: Run Individual Migrations
+
+If you prefer to run migrations one at a time:
+
+1. **Preview what will be changed** (optional but recommended):
+   ```bash
+   python scripts/list_unused_collections.py --uri "mongodb://localhost:27017" --db jobapp
+   ```
+
+2. **Run migration 001** (creates the full schema):
+   ```bash
+   python -m migrations.001_initial_schema --uri "mongodb://localhost:27017" --db jobapp
+   ```
+
+3. **Run migration 006** (cleans up unused collections - **destructive**):
+   ```bash
+   python -m migrations.006_cleanup_unused_collections --uri "mongodb://localhost:27017" --db jobapp
+   ```
+   
+   This will prompt for confirmation before dropping collections.
+
+### Migration Order
+
+Always run migrations in order (the runner handles this automatically):
+
+```bash
+# Fresh setup: run 001 then 006
+# Or simply: python scripts/run_migrations.py --uri ...
+
+# If you already ran 001, you can just run 006
+```
+
+### What Gets Created
+
+After completing the migrations, the following collections are active:
+- `jobs` - job listings
+- `resumes` - resume data (for future matching)
+- `_migrations` - migration tracking
+
+See `document/PROJECT_CONTEXT.md` for the complete schema.
+
+---
+
 ## Starting the App
 
 Run all commands from the **backend directory**.
