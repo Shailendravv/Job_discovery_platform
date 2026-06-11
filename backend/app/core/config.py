@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "extra": "ignore",
         # env vars from OS/terminal always override .env file values
-        "env_file_override": False,
+        "env_file_override": True,
     }
 
 
