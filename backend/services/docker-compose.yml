@@ -25,6 +25,8 @@ services:
       # the first run. Without this, you have to start once, edit the
       # generated settings.yml, then restart.
       - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      # Mount limiter config to silence bot-detection warnings
+      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
     environment:
       - SEARXNG_BASE_URL=http://localhost:8888/
     restart: unless-stopped

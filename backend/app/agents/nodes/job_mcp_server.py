@@ -8,6 +8,7 @@ The core logic lives in _do_search() so it can be imported directly
 
 import json
 import logging
+import threading
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -18,6 +19,35 @@ log = logging.getLogger(__name__)
 
 mcp = FastMCP("search-server", host="0.0.0.0", port=8001)
 
+# Persistent httpx client with cookie jar and realistic browser headers
+# so SearXNG doesn't treat us as a bot.
+_shared_client: httpx.Client | None = None
+_client_lock: threading.Lock = threading.Lock()
+
+
+def _get_client() -> httpx.Client:
+    """Return a singleton httpx.Client with realistic browser headers and cookie persistence."""
+    global _shared_client
+    if _shared_client is None:
+        with _client_lock:
+            if _shared_client is None:
+                _shared_client = httpx.Client(
+                    cookies=httpx.Cookies(),
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/125.0.0.0 Safari/537.36"
+                        ),
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "X-Forwarded-For": "127.0.0.1",
+                        "X-Real-IP": "127.0.0.1",
+                    },
+                    timeout=15.0,
+                )
+    return _shared_client
+
 
 def _do_search(query: str, max_results: int | None = None, time_range: str | None = None) -> list[dict]:
     """Core SearXNG call — returns raw result dicts. Importable directly."""
@@ -27,14 +57,14 @@ def _do_search(query: str, max_results: int | None = None, time_range: str | Non
         params = {"q": query, "format": "json"}
         if time_range:
             params["time_range"] = time_range
-            
-        response = httpx.get(
+
+        client = _get_client()
+        response = client.get(
             f"{settings.SEARXNG_URL}/search",
             params=params,
-            timeout=10.0,
         )
         response.raise_for_status()
-    except httpx.HTTPError as e:
+    except Exception as e:
         log.warning("[mcp:search] SearXNG request failed: %s", e)
         return []
 
