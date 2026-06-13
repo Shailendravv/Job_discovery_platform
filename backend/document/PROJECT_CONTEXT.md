@@ -3,7 +3,7 @@
 **Purpose:** This document provides a simplified reference for the current production-ready state of the job search backend. It covers the minimal schema and active features.
 
 **Last Updated:** 2026-06-13
-**Schema Version:** 7 (job search indexes added)
+**Schema Version:** 8 (resume upload + tailor + cover letter + Cloudinary + Groq)
 
 ---
 
@@ -32,15 +32,20 @@
 
 This is a **Job Search Backend API** that aggregates job listings from multiple sources (SearXNG search, LinkedIn Guest API), fetches full job descriptions using a headless browser, and extracts structured fields using a Local LLM (Ollama). The system combines traditional web scraping with modern AI-powered data extraction to provide enriched job results.
 
-**Current Scope (Minimal Schema):**
+**Current Scope (Enhanced — Resume Management):**
 - **Multi-source aggregation**: SearXNG (proxied Google/Bing/etc.) + LinkedIn Guest API
 - **Automated browsing**: Uses camofox (headless browser) to fetch full job pages
-- **LLM extraction**: Uses Ollama to extract structured data (title, company, salary, skills, etc.)
+- **LLM extraction**: Uses Ollama + Groq (configurable) for structured data extraction
 - **MCP integration**: Exposes tools via Model Context Protocol for agent orchestration
 - **Async-first**: Built with FastAPI and async/await patterns throughout
 - **Minimal persistence**: `jobs` and `resumes` collections in MongoDB
 - **Job persistence**: Search results are automatically saved to MongoDB via `save_jobs()`
 - **Job retrieval**: Filtered, paginated listing via GET /api/v1/jobs
+- **Resume upload**: Accept PDF/DOCX files, store on Cloudinary, parse with Groq LLM
+- **Resume parsing**: Extract structured data (name, email, phone, education, experience, skills) using Groq
+- **Resume tailoring**: Rewrite resume sections to match a specific job description
+- **Cover letter generation**: Generate professional cover letters using Groq
+- **Multi-format download**: Tailored resumes as PDF + DOCX via Cloudinary URLs
 - **SearXNG anti-bot**: Custom settings.yml/limiter.toml + shared httpx client with realistic browser headers
 
 ---
@@ -53,7 +58,10 @@ This is a **Job Search Backend API** that aggregates job listings from multiple 
 4. **Support extensibility** through modular design (easy to add new search sources, extractors, or LLM providers)
 5. **Enable AI agent orchestration** via MCP tools for interactive job search assistants
 6. **Persist search results** to MongoDB for retrieval, deduplication, and historical tracking
-7. **Avoid bot detection** by mimicking realistic browser behavior in outgoing HTTP requests
+7. **Resume management** — Upload, parse, tailor, and generate cover letters for job applications
+8. **Cloud storage** — Store resumes and generated documents on Cloudinary for reliable delivery
+9. **Multi-LLM support** — Use Ollama (local) or Groq (cloud) interchangeably for different tasks
+10. **Avoid bot detection** by mimicking realistic browser behavior in outgoing HTTP requests
 
 ---
 
@@ -62,57 +70,53 @@ This is a **Job Search Backend API** that aggregates job listings from multiple 
 ### High-Level System Diagram
 
 ```
-┌─────────────┐     ┌─────────────────┐     ┌──────────────┐
-│   Client    │────▶│  FastAPI Backend│────▶│   MongoDB    │
-│ (Frontend)  │     │                 │     │  (jobs +     │
-└─────────────┘     └─────────────────┘     │   resumes)   │
-                           │                └──────────────┘
-                    ┌──────┴──────┐
-                    ▼             ▼
-           ┌──────────────────────────┐
-           │   SearchProvider         │
-           │  (Aggregation Layer)     │
-           └─────────┬────────────────┘
-                     │
-         ┌───────────┼───────────┐
-         ▼           ▼           ▼
-    ┌────────┐ ┌─────────┐ ┌──────────┐
-    │SearXNG │ │LinkedIn │ │  (Future)│
-    │via MCP │ │Guest API│ │ Sources  │
-    └────┬───┘ └────┬────┘ └────┬─────┘
-         │          │           │
-         └──────────┼───────────┘
-                    ▼
-         ┌─────────────────────┐
-         │  Candidate Pool     │
-         │  (URL deduplicated) │
-         └─────────┬───────────┘
-                   │
-         ┌─────────▼────────────┐
-         │  Browse & Extract    │
-         │  (camofox + Ollama)  │
-         └─────────┬────────────┘
-                   │
-         ┌─────────▼──────────┐
-         │   JobResult List   │
-         │   save_jobs() → DB │
-         └────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         Client (Frontend)                          │
+│  POST /jobs/search  |  POST /resumes/upload  |  POST /resumes/tailor│
+└──────────────────────────┬───────────────────────────────────────┘
+                           │
+┌──────────────────────────▼───────────────────────────────────────┐
+│                       FastAPI Backend                               │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │  Job Search Pipeline                                         │  │
+│  │  SearXNG/ LinkedIn → Browse → Extract → save_jobs() → DB    │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────┐  │
+│  │  Resume Pipeline (NEW)                                       │  │
+│  │  Upload → Cloudinary → Parse(Groq) → save_resume() → DB     │  │
+│  │  Tailor → Groq LLM → Generate PDF/DOCX → Cloudinary URLs    │  │
+│  │  Cover Letter → Groq LLM → Generate PDF → Cloudinary URL    │  │
+│  └─────────────────────────────────────────────────────────────┘  │
+└──────────┬──────────────┬──────────────────┬──────────────────────┘
+           │              │                  │
+           ▼              ▼                  ▼
+    ┌────────────┐  ┌──────────────┐  ┌──────────────┐
+    │  MongoDB   │  │  Cloudinary  │  │   Groq API   │
+    │jobs/resumes│  │ file storage │  │  LLM (cloud) │
+    └────────────┘  └──────────────┘  └──────────────┘
 ```
 
 ### Component Overview
 
 | Component | File(s) | Purpose |
 |-----------|---------|---------|
-| **API Router** | `app/api/v1/jobs.py` | Exposes POST `/search` (with persistence) + GET `/jobs` (retrieval) |
+| **API Router (Jobs)** | `app/api/v1/jobs.py` | Exposes POST `/search` (with persistence) + GET `/jobs` (retrieval) |
+| **API Router (Resumes)** | `app/api/v1/resumes.py` | Exposes POST `/upload` + POST `/tailor` (NEW) |
 | **Workflow** | `app/agents/job_workflow.py` | Orchestrates search → browse → extract pipeline |
 | **SearchProvider** | `app/agents/search_provider.py` | Search backend abstraction, concurrent source execution |
 | **MCP Search Server** | `app/agents/nodes/job_mcp_server.py` | Exposes `search`/`search_json` tools via MCP; uses shared httpx client with Chrome headers |
 | **Tools Layer** | `app/agents/tools/` | Individual tools: `web_search` (shared httpx client), `browse_extract`, `extract_skills` |
 | **MCP Client** | `app/agents/mcp_client.py` | Connects to MCP servers over Streamable HTTP |
-| **Config** | `app/core/config.py` | Settings loaded from `.env` |
-| **LLM** | `app/core/llm.py` | LLM provider abstraction with threading timeout |
+| **Config** | `app/core/config.py` | Settings loaded from `.env` (incl. Cloudinary + Groq) |
+| **LLM** | `app/core/llm.py` | LLM provider abstraction: Ollama (local), Groq (cloud, implemented), Gemini (stub) |
 | **Database** | `app/core/database.py` | MongoDB async connection (Motor) |
-| **DB Service** | `app/services/db_service.py` | Database operations: `save_jobs()`, `get_jobs()` |
+| **DB Service** | `app/services/db_service.py` | Database operations: `save_jobs()`, `get_jobs()`, `save_resume()`, `save_tailor_session()` |
+| **Cloudinary Service** | `app/services/cloudinary_service.py` | (NEW) File upload to Cloudinary for resume storage |
+| **DOCX Service** | `app/services/docx_service.py` | (NEW) DOCX text extraction and generation |
+| **PDF Service** | `app/services/PDF_service.py` | PDF text extraction + PDF/DOCX generation |
+| **Resume Parser** | `app/services/resume_parser.py` | (NEW) Groq-powered resume → structured data parsing |
+| **Resume Tailor** | `app/services/resume_tailor.py` | (NEW) Groq-powered resume tailoring to job descriptions |
+| **Cover Letter Service** | `app/services/cover_letter.py` | (NEW) Groq-powered cover letter generation |
 
 ### SearXNG Anti-Bot Configuration
 
@@ -139,9 +143,9 @@ The Python httpx clients that talk to SearXNG now use a **shared singleton clien
 
 Files updated: `job_mcp_server.py` and `web_search.py`
 
-### Minimal Database Schema
+### Active Collections
 
-Only 3 collections are actively used:
+4 collections are actively used:
 
 #### `jobs` Collection
 Main job listings with extracted data. Indexed for URL uniqueness and text search.
@@ -186,6 +190,17 @@ Tracks applied database migrations.
 - `rolled_back` (bool)
 - `rolled_back_at` (date, optional)
 
+#### `tailor_sessions` Collection (NEW)
+Tracks resume tailoring history.
+
+**Key fields:**
+- `resume_id`, `job_id` (strings)
+- `original_text_preview` (string)
+- `tailored_text` (string)
+- `cover_letter` (string)
+- `cloudinary_pdf_url`, `cloudinary_docx_url`, `cloudinary_cover_letter_url` (strings)
+- `created_at`, `updated_at` (timestamps)
+
 ---
 
 ## 4. Folder Structure
@@ -201,7 +216,7 @@ backend/
 │   │   └── v1/
 │   │       ├── __init__.py
 │   │       ├── jobs.py                  # POST /search + GET /jobs
-│   │       └── resumes.py               # Resume-related endpoints (reserved)
+│   │       └── resumes.py               # POST /upload + POST /tailor (fully implemented)
 │   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── job_workflow.py              # Main search+browse workflow
@@ -230,7 +245,13 @@ backend/
 │   │   └── resume.py                    # Resume models
 │   └── services/
 │       ├── db_service.py                # Database operations (save_jobs, get_jobs)
-│       └── PDF_service.py               # PDF processing (reserved)
+│       ├── cloudinary_service.py      # (NEW) Cloudinary file upload
+│       ├── docx_service.py            # (NEW) DOCX read/write
+│       ├── resume_parser.py           # (NEW) Groq-powered resume parsing
+│       ├── resume_tailor.py           # (NEW) Groq-powered resume tailoring
+│       ├── cover_letter.py            # (NEW) Groq-powered cover letter generation
+│       ├── PDF_service.py             # PDF text extraction + PDF/DOCX generation
+│       └── db_service.py              # Database operations (jobs + resumes)
 ├── services/
 │   ├── docker-compose.yml               # camofox + searxng containers
 │   └── searxng/
@@ -257,6 +278,7 @@ backend/
 │   ├── MONGODB_SCHEMAS_ATLAS.md
 │   └── TODO-job-persistence-and-retrieval.md
 ├── requirements.txt
+├── .env.example               # (NEW) Reference env vars template
 └── .env
 ```
 
@@ -276,6 +298,11 @@ python-multipart          # Form data parsing
 httpx                     # Async HTTP client (also used for sync MCP calls)
 ollama                    # Ollama Python client
 mcp                       # Model Context Protocol Python SDK
+pypdf                     # PDF text extraction
+reportlab                 # PDF generation
+cloudinary                # (NEW) Cloudinary file upload/storage
+python-docx               # (NEW) DOCX read/write
+groq                      # (NEW) Groq LLM API client
 ```
 
 ### External Services
@@ -284,8 +311,10 @@ mcp                       # Model Context Protocol Python SDK
 |---------|-------------|---------|-----------------|
 | **SearXNG** | `http://localhost:8888` | Privacy-respecting meta-search engine | Required if `SEARXNG_ENABLED=true` |
 | **camofox** | `http://localhost:9500` | Headless browser wrapper | Required |
-| **Ollama** | `http://localhost:11434` | Local LLM for data extraction | Required |
-| **MongoDB** | `MONGODB_URI` | Persistence layer for jobs | Optional (no persistence if not set) |
+| **Ollama** | `http://localhost:11434` | Local LLM for data extraction | Optional (Groq can be primary) |
+| **Groq** | `https://api.groq.com` | Cloud LLM for resume parsing/tailoring/cover letters | Required for resume features |
+| **Cloudinary** | Cloud API | File storage for resumes + generated documents | Required for resume features |
+| **MongoDB** | `MONGODB_URI` | Persistence layer for jobs + resumes | Required |
 
 ### Docker Images
 
@@ -298,7 +327,7 @@ mcp                       # Model Context Protocol Python SDK
 
 ### Environment Variables (.env)
 
-All configuration is managed through environment variables loaded via Pydantic's `BaseSettings`.
+All configuration is managed through environment variables loaded via Pydantic's `BaseSettings`. A complete reference is in `backend/.env.example`.
 
 #### Required Variables
 
@@ -320,8 +349,14 @@ Ollama=http://localhost:11434
 LLM_PROVIDER=ollama                # Options: ollama, groq, gemini
 MODEL_NAME=qwen2.5-coder:1.5b
 MODEL_TEMPERATURE=0.1
-GROQ_API_KEY=
+GROQ_API_KEY=                      # Required for resume features (Groq free tier)
+GROQ_MODEL_NAME=llama-3.3-70b-versatile  # Groq model for resume parsing/tailoring
 GEMINI_API_KEY=
+
+# Cloudinary — File Storage for Resumes
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
 
 # Search Configuration
 SEARCH_MAX_RESULTS=15             # Max results per source after ranking
@@ -360,9 +395,15 @@ class Settings(BaseSettings):
     # LLM Provider
     LLM_PROVIDER: str = "ollama"
     GROQ_API_KEY: str | None = None
+    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"  # (NEW)
     GEMINI_API_KEY: str | None = None
     MODEL_NAME: str = "qwen2.5-coder:1.5b"
     MODEL_TEMPERATURE: float = 0.1
+
+    # Cloudinary — File Storage for Resumes (NEW)
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     # Search Configuration
     SEARCH_MAX_RESULTS: int = 15
@@ -388,7 +429,7 @@ class Settings(BaseSettings):
 
 ## 7. Data Flow
 
-### Search Request Flow (Current — 2026-06-13)
+### Search Request Flow
 
 ```
 POST /api/v1/jobs/search
@@ -578,6 +619,57 @@ Retrieve stored jobs with filtering, full-text search, pagination, and sorting.
 }
 ```
 
+### Resume API Endpoints (NEW)
+
+#### POST /api/v1/resumes/upload
+
+Upload a resume file (PDF or DOCX), parse it with Groq LLM, store on Cloudinary.
+
+**Processing flow:**
+1. Validate file type (PDF/DOCX) and size (max 10 MB)
+2. Upload original file to Cloudinary
+3. Extract text (pypdf for PDF, python-docx for DOCX)
+4. Parse text with Groq LLM → structured JSON
+5. Sanitize parsed data for MongoDB schema compliance
+6. Save to MongoDB `resumes` collection
+7. Return parsed data + Cloudinary URL
+
+#### POST /api/v1/resumes/tailor
+
+Tailor a resume to a specific job description and generate a cover letter.
+
+**Request:**
+```json
+{
+  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+  "job_id": "65f1a2b3c4d5e6f7a8b9c0d2"
+}
+```
+
+**Response (200):**
+```json
+{
+  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+  "job_id": "65f1a2b3c4d5e6f7a8b9c0d2",
+  "tailored_text": "John Doe... [tailored resume content]",
+  "cover_letter": "Dear Hiring Manager,...",
+  "download_urls": {
+    "pdf": "https://res.cloudinary.com/.../resume.pdf",
+    "docx": "https://res.cloudinary.com/.../resume.docx",
+    "cover_letter_pdf": "https://res.cloudinary.com/.../cover_letter.pdf"
+  }
+}
+```
+
+**Processing flow:**
+1. Fetch resume + job from MongoDB by ObjectId
+2. Call Groq LLM to tailor resume text to job description
+3. Call Groq LLM to generate cover letter
+4. Generate PDF (reportlab) + DOCX (python-docx) from tailored text
+5. Upload all files to Cloudinary
+6. Save tailor session to `tailor_sessions` collection
+7. Return text content + download URLs
+
 ### Pydantic Response Models
 
 Defined in `app/models/job.py`:
@@ -585,6 +677,15 @@ Defined in `app/models/job.py`:
 - **`PaginationMeta`**: `page`, `limit`, `total`, `pages`
 - **`JobSearchResponse`**: `jobs: List[JobResult]`, `saved: int`
 - **`JobListResponse`**: `jobs: List[dict]`, `pagination: PaginationMeta`
+
+Defined in `app/models/resume.py` (NEW/Updated):
+
+- **`ParsedResumeData`**: Structured resume data (name, email, phone, education, experience, skills, etc.)
+- **`ResumeUploadResponse`**: `resume_id`, `cloudinary_url`, `parsed_data`, `extracted_text_preview`, `processing_status`
+- **`ResumeTailorRequest`**: `resume_id` + `job_id` (MongoDB ObjectIds)
+- **`DownloadUrls`**: `pdf`, `docx`, `cover_letter_pdf` URLs
+- **`ResumeTailorResponse`**: `resume_id`, `job_id`, `tailored_text`, `cover_letter`, `download_urls`
+- **`ResumeTailorErrorResponse`**: Error response with fallback content
 
 ### MCP Tools (Model Context Protocol)
 
@@ -613,7 +714,7 @@ Returns raw JSON array of search results. Used internally by `SearchProvider`.
 
 ## 9. Business Logic
 
-### Query Generation
+### 9.1 Query Generation (Jobs)
 
 The system uses an LLM to dynamically generate targeted queries. The prompt instructs the LLM to:
 
@@ -698,12 +799,46 @@ The system uses an LLM to dynamically generate targeted queries. The prompt inst
 3. Replace spaces with hyphens
 4. Return "unknown" if no match
 
-### Skill Extraction Fallback
+### 9.5 Skill Extraction Fallback
 
 If `browse_extract` doesn't return skills:
 - Falls back to `extract_skills_from_text(description)`
 - Matches against hardcoded `SKILL_KEYWORDS` list (35 common tech/business skills)
 - Case-insensitive substring matching (not whole word)
+
+### 9.6 Resume Parsing (NEW)
+
+Uses Groq LLM to extract structured data from raw resume text.
+
+**Prompt strategy:** Instruct the LLM to return a specific JSON structure with fields for name, email, phone, education (array), experience (array), skills, languages, and certifications. **Important:** The prompt uses "empty strings for missing text fields and 0 for missing years" (instead of null) to produce MongoDB-schema-compliant output directly.
+
+**Sanitization:** A `_sanitize_parsed_data()` function deeply cleans the LLM output before database insertion:
+- Defaults `education[].year` to 0 (int) instead of null
+- Filters null items from arrays (`skills`, `languages`, `certifications`)
+- Removes empty education/experience entries
+- Omits `email`/`phone` when empty (avoids regex pattern validation failure)
+
+### 9.7 Resume Tailoring (NEW)
+
+Uses Groq LLM to rewrite resume sections based on a job description.
+
+**Input:** Full resume text + job document (title, description, skills)
+**Output:** Tailored resume with:
+- Rewritten Professional Summary aligned to the job
+- Reordered experience bullets emphasizing relevant skills
+- Prioritized skills section
+- All factual information preserved (no fabrication)
+
+### 9.8 Cover Letter Generation (NEW)
+
+Uses Groq LLM to generate a professional cover letter.
+
+**Input:** Candidate info (name, skills, experience) + job details (title, company, description)
+**Output:** 3-4 paragraph cover letter:
+- 1st paragraph: Enthusiasm + specific position mention
+- 2nd paragraph: Relevant skills/experience with examples
+- 3rd paragraph: Company knowledge + contribution value
+- Closing: Call to action + candidate signature
 
 ---
 
@@ -924,20 +1059,69 @@ Load Balancer
 
 | File | Lines | Responsibility |
 |------|-------|----------------|
-| `app/agents/job_workflow.py` | 367 | Main workflow — query gen, search orchestration, browse+extract, final assembly |
+| `app/agents/job_workflow.py` | 367 | Main workflow — query gen, search orchestration, browse+extract |
 | `app/agents/search_provider.py` | 199 | Search backend abstraction, concurrent source execution |
 | `app/agents/mcp_client.py` | 46 | MCP protocol client over Streamable HTTP |
-| `app/agents/nodes/job_mcp_server.py` | 107 | MCP server with shared httpx client (Chrome headers, cookies, HTTP/2) |
+| `app/agents/nodes/job_mcp_server.py` | 107 | MCP server with shared httpx client |
 | `app/agents/tools/web_search.py` | 58 | Direct SearXNG call with shared httpx client |
-| `app/agents/tools/browse_jobs.py` | 33 | Browser tool wrapper (calls MCP browse server) |
-| `app/core/llm.py` | 72 | LLM provider abstraction with threading timeout |
-| `app/core/config.py` | 50 | Settings management |
+| `app/agents/tools/browse_jobs.py` | 33 | Browser tool wrapper |
+| `app/core/llm.py` | ~100 | LLM provider abstraction (Ollama + Groq implemented) |
+| `app/core/config.py` | ~50 | Settings (incl. Cloudinary + Groq config) |
 | `app/api/v1/jobs.py` | 88 | REST endpoints — POST /search + GET /jobs |
-| `app/services/db_service.py` | 80 | Database operations — save_jobs, get_jobs |
-| `services/searxng/settings.yml` | 30 | SearXNG outgoing config (NEW) |
-| `services/searxng/limiter.toml` | 45 | SearXNG rate limiter config (NEW) |
+| `app/api/v1/resumes.py` | ~220 | (NEW) REST endpoints — POST /upload + POST /tailor |
+| `app/models/resume.py` | ~70 | (NEW) Pydantic models for upload/tailor/cover letter |
+| `app/services/cloudinary_service.py` | ~35 | (NEW) Cloudinary file upload |
+| `app/services/docx_service.py` | ~50 | (NEW) DOCX read/write |
+| `app/services/resume_parser.py` | ~90 | (NEW) Groq-powered resume parsing |
+| `app/services/resume_tailor.py` | ~55 | (NEW) Groq-powered resume tailoring |
+| `app/services/cover_letter.py` | ~65 | (NEW) Groq-powered cover letter gen |
+| `app/services/PDF_service.py` | ~55 | PDF extraction + generation (enhanced) |
+| `app/services/db_service.py` | ~160 | DB ops — save_jobs, get_jobs, save_resume, save_tailor_session |
+| `services/searxng/settings.yml` | 30 | SearXNG outgoing config |
+| `services/searxng/limiter.toml` | 45 | SearXNG rate limiter config |
 
 ### Critical Code Patterns
+
+#### Upload Endpoint with Multiple Fallbacks (NEW)
+```python
+# Each step has its own try/except with fallback:
+try:
+    extracted_text = extract_text_from_pdf(raw_bytes)
+except Exception:
+    raise HTTPException(status_code=422)
+
+try:
+    cloud_result = await upload_file(raw_bytes, ...)
+except Exception:
+    raise HTTPException(status_code=500)
+
+try:
+    parsed_data = await parse_resume_text(extracted_text)
+except Exception:
+    parsed_data = default_fallback  # Never fails the upload
+
+safe_parsed = _sanitize_parsed_data(parsed_data)  # MongoDB-compliant
+resume_id = await save_resume(db, resume_doc)
+```
+
+#### MongoDB Schema Sanitization (NEW)
+```python
+def _sanitize_parsed_data(data: dict) -> dict:
+    safe = {"name": str(data.get("name") or "")}
+    # Education: default year to 0 (int) instead of null
+    for entry in raw_education:
+        year = entry.get("year")
+        safe_entry["year"] = year if isinstance(year, int) else 0
+        if safe_entry["institution"] or safe_entry["degree"]:
+            safe_education.append(safe_entry)
+    # Arrays: filter out null/empty items
+    for key in ("skills", "languages", "certifications"):
+        safe[key] = [str(item) for item in raw_list if item]
+    # Email/phone: omit when empty (avoids regex pattern failure)
+    if raw_email:
+        safe["email"] = raw_email
+    return safe
+```
 
 #### Async Search with Exception Handling
 ```python
@@ -1100,12 +1284,15 @@ async def get_jobs(db, page, limit, source, job_type, location, q, sort_by, sort
 - **Parallelize browsing** within sources (currently sequential per source)
 - **Add caching layer** (Redis) to avoid re-extracting same URLs
 - **Implement paywall bypass** strategies for locked job descriptions
-- **Add resume parsing and matching** (matching score against jobs)
+- **ATS score calculation** — Automated scoring of resume fit against job descriptions
+- **Batch resume processing** — Upload multiple resumes at once
+- **Resume versioning** — Track changes across multiple uploads/tailors
+- **Template library** — Predefined formatting templates for generated documents
 - **Webhooks** for async result delivery
 - **Rate limiting and quota management** per user/session
-- **Better error reporting** to clients (currently swallowed on browse failures)
 - **Async task queue** (Celery/Redis) for production deployment
 - **SearXNG engine failover** — if one engine returns CAPTCHA, try another
+- **User authentication** — Personal resume management with user accounts
 
 ### Schema Evolution
 
@@ -1141,10 +1328,10 @@ These can be re-added by creating new migration files that create and populate t
 - **006_cleanup_unused_collections**: Dropped 9 collections not in use (schema reduced to 3 core collections)
 - **007_add_job_search_indexes**: Added unique index on `url` + text index on `title`, `company`, `description` in `jobs` collection
 
-Current active schema: `jobs`, `resumes`, `_migrations` only.
+Current active schema: `jobs`, `resumes`, `tailor_sessions`, `_migrations`.
 
 ---
 
-**Document Version:** 3.0
+**Document Version:** 4.0
 **Last Updated:** 2026-06-13
-**Based on:** Codebase analysis + anti-bot improvements + persistence implementation
+**Based on:** Codebase analysis + resume management implementation (upload, parse, tailor, cover letter)

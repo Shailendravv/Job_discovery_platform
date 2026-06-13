@@ -307,6 +307,89 @@ curl "http://localhost:8000/api/v1/jobs?source=searxng&job_type=full-time&q=pyth
 | sort_by    | string | `created_at`| Sort field: `created_at`, `updated_at`, `title`, `company`, `score` |
 | sort_order | string | `desc`      | Sort direction: `asc` or `desc`                               |
 
+### POST /api/v1/resumes/upload
+
+Upload a resume file (PDF or DOCX). The file is stored on Cloudinary, parsed by Groq LLM into structured data, and saved to MongoDB.
+
+**Request:** `multipart/form-data` with `file` field (PDF or DOCX, max 10 MB)
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/resumes/upload" \
+  -F "file=@resume.pdf"
+```
+
+**Response:**
+```json
+{
+  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+  "cloudinary_url": "https://res.cloudinary.com/.../resume.pdf",
+  "parsed_data": {
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1-555-123-4567",
+    "education": [{ "institution": "MIT", "degree": "B.S. Computer Science", "year": 2020 }],
+    "experience": [{ "company": "Tech Corp", "title": "Engineer", "duration": "2020-2024", "description": "..." }],
+    "skills": ["Python", "React", "TypeScript"],
+    "languages": ["English"],
+    "certifications": ["AWS Solutions Architect"]
+  },
+  "extracted_text_preview": "John Doe\njohn@example.com\n...",
+  "processing_status": "completed"
+}
+```
+
+**Flow:**
+1. Validate file type (PDF/DOCX only) and size (≤ 10 MB)
+2. Upload original file to Cloudinary
+3. Extract text (via pypdf for PDF, python-docx for DOCX)
+4. Parse text with Groq LLM → structured JSON
+5. Sanitize data for MongoDB schema compliance
+6. Save to MongoDB
+7. Return `resume_id`, `cloudinary_url`, and `parsed_data`
+
+### POST /api/v1/resumes/tailor
+
+Tailor a resume to a specific job description and generate a cover letter. Both are returned as text + Cloudinary download URLs.
+
+**Request:**
+```json
+{
+  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+  "job_id": "65f1a2b3c4d5e6f7a8b9c0d2"
+}
+```
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/api/v1/resumes/tailor" \
+  -H "Content-Type: application/json" \
+  -d '{"resume_id": "65f1a2b3c4d5e6f7a8b9c0d1", "job_id": "65f1a2b3c4d5e6f7a8b9c0d2"}'
+```
+
+**Response:**
+```json
+{
+  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
+  "job_id": "65f1a2b3c4d5e6f7a8b9c0d2",
+  "tailored_text": "John Doe\n\nProfessional Summary\n...",
+  "cover_letter": "Dear Hiring Manager,\n\nI am writing to express...\n\nSincerely,\nJohn Doe",
+  "download_urls": {
+    "pdf": "https://res.cloudinary.com/.../resume.pdf",
+    "docx": "https://res.cloudinary.com/.../resume.docx",
+    "cover_letter_pdf": "https://res.cloudinary.com/.../cover_letter.pdf"
+  }
+}
+```
+
+**Flow:**
+1. Fetch resume + job from MongoDB by ObjectId
+2. Call Groq LLM to tailor resume text to job description
+3. Call Groq LLM to generate cover letter
+4. Generate PDF + DOCX from tailored text
+5. Upload all files to Cloudinary
+6. Return text content + download URLs
+
 ---
 
 ## Project Structure
@@ -323,11 +406,22 @@ backend/
 │   │   └── job_workflow.py              # Main search + extract workflow
 │   ├── api/v1/
 │   │   ├── jobs.py                      # POST /api/v1/jobs/search + GET /api/v1/jobs
-│   │   └── resumes.py
+│   │   └── resumes.py                   # POST /api/v1/resumes/upload + POST /api/v1/resumes/tailor
 │   ├── core/
 │   │   ├── config.py                    # Settings from .env
 │   │   └── llm.py                       # LLM provider (Ollama / Groq / Gemini)
-│   └── main.py
+│   ├── models/
+│   │   ├── job.py                       # Pydantic models (JobSearchRequest, JobResult, etc.)
+│   │   └── resume.py                    # Pydantic models (ResumeUploadResponse, ResumeTailorResponse, ParsedResumeData, etc.)
+│   └── services/
+│       ├── cloudinary_service.py        # Cloudinary file upload for resumes
+│       ├── docx_service.py              # DOCX text extraction and generation
+│       ├── resume_parser.py             # Groq-powered resume → structured data
+│       ├── resume_tailor.py             # Groq-powered resume tailoring
+│       ├── cover_letter.py              # Groq-powered cover letter generation
+│       ├── PDF_service.py               # PDF extraction + PDF/DOCX generation
+│       └── db_service.py                # Database operations (jobs + resumes)
+├── main.py
 ├── services/
 │   ├── docker-compose.yml               # SearXNG + Camofox
 │   └── searxng/
@@ -343,6 +437,7 @@ backend/
 │   ├── generate_test_data.py
 │   └── create_indexes.py
 ├── requirements.txt
+├── .env.example               # Reference env vars template
 └── .env
 ```
 
