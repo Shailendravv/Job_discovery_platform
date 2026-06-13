@@ -39,32 +39,49 @@ Ollama listens on `http://localhost:11434` by default.
 
 ## Environment Setup
 
-Copy `.env` and fill in your values:
-```
-MONGODB_URI=<your-mongodb-uri>
+Copy `.env.example` to `.env` and fill in your values:
+```env
+MONGODB_URI=mongodb://localhost:27017/jobapp
 SEARXNG_URL=http://localhost:8888
 CAMOFOX_URL=http://localhost:9500
 Ollama=http://localhost:11434
+
+# MCP Server URLs
 MCP_SEARCH_URL=http://localhost:8001
 MCP_BROWSE_URL=http://localhost:8002
+
+# LLM Provider (ollama, groq, gemini)
 LLM_PROVIDER=ollama
+MODEL_NAME=qwen2.5-coder:1.5b
+MODEL_TEMPERATURE=0.1
+GROQ_API_KEY=
+GROQ_MODEL_NAME=llama-3.3-70b-versatile
+
+# Cloudinary (for resume file storage)
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+# Search Configuration
 SEARCH_MAX_RESULTS=10
 BROWSE_TOP_N=15
 SEARCH_SITES=naukri.com,linkedin.com/jobs,apna.co,indeed.com,instahyre.com,shine.com,foundit.in
 SEARCH_FRESH=true
 SEARCH_CAREERS=false
 
-# LinkedIn Guest API Configuration (optional)
-LINKEDIN_GUEST_API_ENABLED=true
+# SearXNG
+SEARXNG_ENABLED=false
+
+# LinkedIn Guest API
+LINKEDIN_GUEST_API_ENABLED=false
 LINKEDIN_GUEST_API_LOCATION=India
 LINKEDIN_GUEST_API_TIME_RANGE=r86400
 
-# JSearch API (OpenWebNinja) Configuration (optional - requires API key)
-JSEARCH_API_KEY=your_jsearch_api_key_here
-JSEARCH_API_HOST=jsearch.p.rapidapi.com
-JSEARCH_API_LOCATION=India
-JSEARCH_API_DATE_POSTED=today
+# Operations
+LOG_LEVEL=INFO
 ```
+
+> A complete reference with all optional vars is available in `.env.example`.
 
 Install dependencies:
 ```bash

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from app.core.database import connect_db, close_db
 from app.api.v1 import jobs, resumes
 from app.core.config import settings
+from app.services.cloudinary_service import configure_cloudinary
 
 log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(
@@ -21,6 +22,23 @@ async def startup():
     await connect_db()
     from app.core.config import settings
     log = logging.getLogger("startup")
+
+    # Configure Cloudinary
+    if settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET:
+        try:
+            configure_cloudinary()
+            log.info("  CLOUDINARY                  : configured")
+        except Exception as e:
+            log.warning("  CLOUDINARY                  : configuration failed — %s", e)
+    else:
+        log.warning("  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)")
+
+    # Log Groq status
+    if settings.GROQ_API_KEY:
+        log.info("  GROQ                        : configured (model=%s)", settings.GROQ_MODEL_NAME)
+    else:
+        log.warning("  GROQ                        : not configured (set GROQ_API_KEY env var)")
+
     log.info("=== Search Provider Config ===")
     log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)
     log.info("  LINKEDIN_GUEST_API_ENABLED : %r", settings.LINKEDIN_GUEST_API_ENABLED)

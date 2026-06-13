@@ -12,3 +12,6 @@ pypdf
 reportlab
 ollama
 mcp
+cloudinary
+python-docx
+groq

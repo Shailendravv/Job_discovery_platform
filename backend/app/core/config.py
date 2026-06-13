@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     MODEL_NAME: str = "qwen2.5-coder:1.5b"
     MODEL_TEMPERATURE: float = 0.1
 
+    # Cloudinary Configuration
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+
+    # Groq LLM Configuration
+    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
+
     # SearXNG toggle
     SEARXNG_ENABLED: bool = False  # Set to True to enable SearXNG search results
 
