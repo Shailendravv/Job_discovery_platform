@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Clear all data from the `jobs` and `resumes` collections.
+Clear all data from the `jobs`, `resumes`, and `tailor_sessions` collections.
 
 This preserves the collections and their indexes — only documents are removed.
 Useful for testing or resetting the database between search runs.
@@ -50,7 +50,7 @@ async def clear_collection(db, collection_name: str, dry_run: bool = False) -> i
 
 
 async def clear_all(uri: str, db_name: str, dry_run: bool = False, force: bool = False):
-    """Clear jobs and resumes collections."""
+    """Clear jobs, resumes, and tailor_sessions collections."""
     client = AsyncIOMotorClient(uri)
     db = client[db_name]
 
@@ -63,22 +63,25 @@ async def clear_all(uri: str, db_name: str, dry_run: bool = False, force: bool =
             print("🔍 DRY RUN MODE — no data will be deleted\n")
 
         # Count current documents
-        jobs_count = await count_documents(db, "jobs")
-        resumes_count = await count_documents(db, "resumes")
+        collections = ["jobs", "resumes", "tailor_sessions"]
+        counts = {}
+        for coll in collections:
+            counts[coll] = await count_documents(db, coll)
 
         print(f"Current document counts:")
-        print(f"  jobs:    {jobs_count}")
-        print(f"  resumes: {resumes_count}")
+        for coll in collections:
+            print(f"  {coll:<20} {counts[coll]}")
         print()
 
-        if jobs_count == 0 and resumes_count == 0:
-            print("Both collections are already empty. Nothing to do.\n")
+        total_clearable = sum(counts.values())
+        if total_clearable == 0:
+            print("All collections are already empty. Nothing to do.\n")
             return
 
         # Confirm unless --force
         if not dry_run and not force:
-            print(f"This will permanently delete ALL {jobs_count + resumes_count} document(s)")
-            print(f"from the 'jobs' and 'resumes' collections in '{db_name}'.")
+            print(f"This will permanently delete ALL {total_clearable} document(s)")
+            print(f"from the '{', '.join(collections)}' collections in '{db_name}'.")
             print("Collections and indexes will be preserved.")
             print()
             response = input("Are you sure? Type 'yes' to continue: ").strip().lower()
@@ -89,15 +92,16 @@ async def clear_all(uri: str, db_name: str, dry_run: bool = False, force: bool =
 
         # Clear collections
         total = 0
-        total += await clear_collection(db, "jobs", dry_run)
-        total += await clear_collection(db, "resumes", dry_run)
+        for coll in collections:
+            total += await clear_collection(db, coll, dry_run)
 
         print(f"\n{'─' * 56}")
         if dry_run:
             print(f"🔍 Dry run complete — would delete {total} document(s) total.")
             print("   Run without --dry-run to actually delete.")
         else:
-            print(f"✅ Done! Deleted {total} document(s) across both collections.")
+            total_colls = len(collections)
+            print(f"✅ Done! Deleted {total} document(s) across {total_colls} collections.")
             print("   Collections and indexes are intact.")
         print()
 
@@ -109,7 +113,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Clear all documents from jobs and resumes collections",
+        description="Clear all documents from jobs, resumes, and tailor_sessions collections",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
