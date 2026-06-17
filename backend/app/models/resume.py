@@ -63,3 +63,9 @@ class ResumeTailorErrorResponse(BaseModel):
     error: str
     tailored_text: Optional[str] = None
     cover_letter: Optional[str] = None
+
+
+# ── Download from URL Models ──
+
+class DownloadFromUrlRequest(BaseModel):
+    url: str = Field(..., description="Cloudinary delivery URL to download and proxy through backend")

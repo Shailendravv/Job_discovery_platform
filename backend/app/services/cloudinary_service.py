@@ -10,6 +10,7 @@ Key design rules (per Cloudinary docs):
 - Free Cloudinary accounts block PDF/ZIP delivery by default; unblock in Security settings.
 """
 import logging
+import re
 import httpx
 import cloudinary
 import cloudinary.uploader
@@ -159,3 +160,57 @@ def get_format_for_file(filename: str) -> str | None:
     if "." in filename:
         return filename.rsplit(".", 1)[-1]
     return None
+
+
+def parse_cloudinary_url(cloudinary_url: str) -> dict:
+    """
+    Parse a Cloudinary delivery URL into its components for re-download.
+
+    Handles both formats:
+      - PDF (resource_type="image"): https://res.cloudinary.com/{cloud}/image/upload/v1/{public_id}.pdf
+      - Raw (resource_type="raw"):   https://res.cloudinary.com/{cloud}/raw/upload/v1/{public_id}
+
+    Returns:
+        dict with keys: public_id, resource_type, file_format, filename
+
+    Raises:
+        ValueError if the URL cannot be parsed.
+    """
+    # Expected pattern:
+    # https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/v{version}/{path}
+    import re
+
+    # Strip query params
+    url = cloudinary_url.split("?")[0]
+
+    # Match: https://res.cloudinary.com/{cloud}/{resource_type}/upload/v{version}/{rest}
+    pattern = r"^https?://res\.cloudinary\.com/[^/]+/([^/]+)/upload/v\d+/(.+)$"
+    match = re.match(pattern, url)
+    if not match:
+        raise ValueError(f"Could not parse Cloudinary URL: {cloudinary_url}")
+
+    resource_type = match.group(1)
+    path = match.group(2)
+
+    if resource_type == "raw":
+        # Raw URLs: no format extension
+        public_id = path
+        file_format = None
+        filename = path.rsplit("/", 1)[-1] or "download"
+    else:
+        # Image URLs: path ends with .{format}
+        if "." not in path:
+            # No extension - assume PDF
+            public_id = path
+            file_format = "pdf"
+            filename = f"{path.rsplit('/', 1)[-1]}.pdf"
+        else:
+            public_id, file_format = path.rsplit(".", 1)
+            filename = path.rsplit("/", 1)[-1] or f"download.{file_format}"
+
+    return {
+        "public_id": public_id,
+        "resource_type": resource_type,
+        "file_format": file_format,
+        "filename": filename,
+    }

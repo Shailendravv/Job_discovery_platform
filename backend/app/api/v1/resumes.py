@@ -11,6 +11,7 @@ from app.models.resume import (
     ResumeTailorErrorResponse,
     ParsedResumeData,
     DownloadUrls,
+    DownloadFromUrlRequest,
 )
 from app.api.deps import get_db
 from app.services.PDF_service import extract_text_from_pdf, generate_pdf
@@ -19,6 +20,7 @@ from app.services.cloudinary_service import (
     upload_file,
     get_download_url,
     stream_file,
+    parse_cloudinary_url,
 )
 from app.services.resume_parser import parse_resume_text
 from app.services.resume_tailor import tailor_resume_text
@@ -359,37 +361,43 @@ def _format_experience(experience: list) -> str:
     return "\n".join(parts)
 
 
-@router.get("/download/{public_id:path}")
-async def download_file(
-    public_id: str,
-    resource_type: str = "image",
-    file_format: str = "pdf",
-    filename: str = "download.pdf",
-):
+@router.post("/download-from-url")
+async def download_file_from_url(request: DownloadFromUrlRequest):
     """
-    Stream a file from Cloudinary with proper Content-Disposition headers.
+    Download a file from Cloudinary by providing its Cloudinary delivery URL.
 
-    This endpoint handles the "Blocked for delivery" issue by using the
-    correct resource_type and format parameters per Cloudinary docs.
+    The frontend receives Cloudinary URLs from the /tailor endpoint. This endpoint
+    accepts one of those URLs in the request body, parses it to extract the
+    public_id, resource_type, and format, then streams the file through our
+    backend — bypassing the direct Cloudinary delivery (which may be blocked
+    for PDFs on free accounts).
 
-    Args:
-        public_id: Cloudinary public_id (without extension, e.g. "tailored/abc123/resume").
-        resource_type: "image" for PDFs, "raw" for DOCX.
-        file_format: File format to deliver (e.g. "pdf"). Ignored for resource_type="raw".
-        filename: The filename the browser will save the download as.
+    Request body:
+        { "url": "https://res.cloudinary.com/.../resume_pdf.pdf" }
     """
     try:
+        parsed = parse_cloudinary_url(request.url)
+        log.info("Parsed Cloudinary URL: %s", parsed)
+
         return StreamingResponse(
             stream_file(
-                public_id=public_id,
-                resource_type=resource_type,
-                file_format=file_format,
+                public_id=parsed["public_id"],
+                resource_type=parsed["resource_type"],
+                file_format=parsed["file_format"],
             ),
-            media_type="application/pdf" if file_format == "pdf" else "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            media_type=(
+                "application/pdf"
+                if parsed["file_format"] == "pdf"
+                else "application/octet-stream"
+            ),
+            headers={
+                "Content-Disposition": f'attachment; filename="{parsed["filename"]}"'
+            },
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        log.error("Download failed: %s", e, exc_info=True)
+        log.error("Download from URL failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
