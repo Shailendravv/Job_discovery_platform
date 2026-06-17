@@ -1,7 +1,7 @@
 import logging
-import io
 import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.resume import (
@@ -15,7 +15,11 @@ from app.models.resume import (
 from app.api.deps import get_db
 from app.services.PDF_service import extract_text_from_pdf, generate_pdf
 from app.services.docx_service import extract_text_from_docx, generate_docx
-from app.services.cloudinary_service import upload_file
+from app.services.cloudinary_service import (
+    upload_file,
+    get_download_url,
+    stream_file,
+)
 from app.services.resume_parser import parse_resume_text
 from app.services.resume_tailor import tailor_resume_text
 from app.services.cover_letter import generate_cover_letter
@@ -67,10 +71,25 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
         raise HTTPException(status_code=422, detail="No text could be extracted from the uploaded file")
 
     # ── Upload original to Cloudinary ──
-    file_ext = "pdf" if file.content_type == "application/pdf" else "docx"
-    public_id = f"resumes/{uuid.uuid4().hex}-{file.filename or 'resume'}"
+    # Determine resource_type: PDFs must use "image", DOCX uses "raw"
+    is_pdf = file.content_type == "application/pdf"
+    resource_type = "image" if is_pdf else "raw"
+
+    # public_id must NOT include file extension per Cloudinary docs
+    base_name = (file.filename or "resume").rsplit(".", 1)[0]
+    public_id = f"resumes/{uuid.uuid4().hex}-{base_name}"
     try:
-        cloud_result = await upload_file(raw_bytes, public_id=public_id, resource_type="raw")
+        cloud_result = await upload_file(
+            raw_bytes,
+            public_id=public_id,
+            resource_type=resource_type,
+        )
+        # Generate a proper download URL (critical for PDFs on free accounts)
+        download_url = get_download_url(
+            public_id=cloud_result["public_id"],
+            resource_type=resource_type,
+            file_format="pdf" if is_pdf else None,
+        )
     except Exception as e:
         log.error("Cloudinary upload failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to upload file to storage: {str(e)}")
@@ -95,8 +114,9 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
     # ── Save to MongoDB ──
     resume_doc = {
         "resume_id": resume_uuid,
-        "cloudinary_url": cloud_result["url"],
+        "cloudinary_url": download_url,
         "cloudinary_public_id": cloud_result["public_id"],
+        "cloudinary_resource_type": resource_type,
         "filename": file.filename or "unknown",
         "content_type": file.content_type,
         "file_size": len(raw_bytes),
@@ -111,7 +131,7 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
     # ── Return structured response ──
     return ResumeUploadResponse(
         resume_id=resume_id,
-        cloudinary_url=cloud_result["url"],
+        cloudinary_url=download_url,
         parsed_data=ParsedResumeData(**safe_parsed),
         extracted_text_preview=extracted_text[:500],
         processing_status=processing_status,
@@ -173,26 +193,46 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
 
         session_id = uuid.uuid4().hex
 
+        # Upload tailored resume as PDF (resource_type="image" per Cloudinary docs)
         pdf_result = await upload_file(
             pdf_bytes,
-            public_id=f"tailored/{session_id}/resume.pdf",
-            resource_type="raw",
+            public_id=f"tailored/{session_id}/resume_pdf",  # No .pdf extension!
+            resource_type="image",
         )
+        # Upload tailored resume as DOCX (resource_type="raw" for non-PDF)
         docx_result = await upload_file(
             docx_bytes,
-            public_id=f"tailored/{session_id}/resume.docx",
+            public_id=f"tailored/{session_id}/resume_docx",
             resource_type="raw",
         )
+        # Upload cover letter as PDF (resource_type="image" per Cloudinary docs)
         cover_pdf_result = await upload_file(
             cover_pdf_bytes,
-            public_id=f"tailored/{session_id}/cover_letter.pdf",
+            public_id=f"tailored/{session_id}/cover_letter",  # No .pdf extension!
+            resource_type="image",
+        )
+
+        # Generate proper download URLs for Cloudinary delivery
+        pdf_url = get_download_url(
+            public_id=pdf_result["public_id"],
+            resource_type="image",
+            file_format="pdf",
+        )
+        docx_url = get_download_url(
+            public_id=docx_result["public_id"],
             resource_type="raw",
+            file_format=None,
+        )
+        cover_pdf_url = get_download_url(
+            public_id=cover_pdf_result["public_id"],
+            resource_type="image",
+            file_format="pdf",
         )
 
         download_urls = DownloadUrls(
-            pdf=pdf_result["url"],
-            docx=docx_result["url"],
-            cover_letter_pdf=cover_pdf_result["url"],
+            pdf=pdf_url,
+            docx=docx_url,
+            cover_letter_pdf=cover_pdf_url,
         )
 
         # Save tailor session (fire-and-forget style)
@@ -203,9 +243,9 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
                 "original_text_preview": resume_text[:500],
                 "tailored_text": tailored_text,
                 "cover_letter": cover_letter,
-                "cloudinary_pdf_url": pdf_result["url"],
-                "cloudinary_docx_url": docx_result["url"],
-                "cloudinary_cover_letter_url": cover_pdf_result["url"],
+                "cloudinary_pdf_url": pdf_url,
+                "cloudinary_docx_url": docx_url,
+                "cloudinary_cover_letter_url": cover_pdf_url,
             })
         except Exception as e:
             log.warning("Failed to save tailor session: %s", e)
@@ -317,3 +357,39 @@ def _format_experience(experience: list) -> str:
             line += f": {desc}"
         parts.append(line)
     return "\n".join(parts)
+
+
+@router.get("/download/{public_id:path}")
+async def download_file(
+    public_id: str,
+    resource_type: str = "image",
+    file_format: str = "pdf",
+    filename: str = "download.pdf",
+):
+    """
+    Stream a file from Cloudinary with proper Content-Disposition headers.
+
+    This endpoint handles the "Blocked for delivery" issue by using the
+    correct resource_type and format parameters per Cloudinary docs.
+
+    Args:
+        public_id: Cloudinary public_id (without extension, e.g. "tailored/abc123/resume").
+        resource_type: "image" for PDFs, "raw" for DOCX.
+        file_format: File format to deliver (e.g. "pdf"). Ignored for resource_type="raw".
+        filename: The filename the browser will save the download as.
+    """
+    try:
+        return StreamingResponse(
+            stream_file(
+                public_id=public_id,
+                resource_type=resource_type,
+                file_format=file_format,
+            ),
+            media_type="application/pdf" if file_format == "pdf" else "application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("Download failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
