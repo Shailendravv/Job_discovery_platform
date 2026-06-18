@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Briefcase, FileText, CheckSquare } from "lucide-react";
+import { Briefcase, FileText, CheckSquare, Search } from "lucide-react";
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
@@ -8,6 +8,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const navItems = [
     { name: "Dashboard" as const, path: "/", icon: Briefcase },
+    { name: "Discovery" as const, path: "/discovery", icon: Search },
     { name: "Resumes" as const, path: "/resumes", icon: FileText },
     { name: "Applications" as const, path: "/applications", icon: CheckSquare },
   ];

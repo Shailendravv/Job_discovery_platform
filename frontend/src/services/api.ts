@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import type { JobFilterParams, JobListResponse, JobDetail } from "@/types";
+import type { JobFilterParams, JobListResponse, JobDetail, JobSearchRequest, JobSearchResponse } from "@/types";
 
 export class ApiError extends Error {
   status: number;
@@ -54,6 +54,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  searchJobs: async (params: JobSearchRequest): Promise<JobSearchResponse> => {
+    return request<JobSearchResponse>("/api/v1/jobs/search", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+  },
+
   getJobById: async (jobId: string): Promise<JobDetail> => {
     return request<JobDetail>(`/api/v1/jobs/jobs/${jobId}`);
   },

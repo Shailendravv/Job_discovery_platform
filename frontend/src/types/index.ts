@@ -38,6 +38,15 @@ export interface JobFilterParams {
   sort_order?: "asc" | "desc";
 }
 
+export interface JobSearchRequest {
+  user_input: string;
+}
+
+export interface JobSearchResponse {
+  jobs: Job[];
+  saved: number;
+}
+
 export interface JobDetail {
   id: string;
   title: string;
