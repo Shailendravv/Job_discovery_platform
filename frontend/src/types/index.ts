@@ -37,3 +37,23 @@ export interface JobFilterParams {
   sort_by?: "created_at" | "updated_at" | "title" | "company" | "score";
   sort_order?: "asc" | "desc";
 }
+
+export interface JobDetail {
+  id: string;
+  title: string;
+  company: string;
+  location: string | null;
+  description: string;
+  url: string | null;
+  apply_url: string | null;
+  skills: string[];
+  job_type: string;
+  posted_date: string | null;
+  salary: string | null;
+  source: string | null;
+  experience: string | null;
+  requirements: string[];
+  ref_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}

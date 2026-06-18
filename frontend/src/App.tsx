@@ -1,30 +1,34 @@
 import React from "react";
-import { AppContextProvider, useApp } from "@/context/AppContext";
+import { Routes, Route } from "react-router-dom";
+import { AppContextProvider } from "@/context/AppContext";
 import { Layout } from "@/components/layout/Layout";
 import { DashboardView } from "@/features/dashboard/DashboardView";
 import { ResumesView } from "@/features/resumes/ResumesView";
 import { ApplicationsView } from "@/features/applications/ApplicationsView";
+import { JobDetailsView } from "@/features/job-details/JobDetailsView";
 
-const MainContent: React.FC = () => {
-  const { activeTab } = useApp();
+const DashboardPage: React.FC = () => {
+  return <DashboardView />;
+};
 
-  switch (activeTab) {
-    case "Dashboard":
-      return <DashboardView />;
-    case "Resumes":
-      return <ResumesView />;
-    case "Applications":
-      return <ApplicationsView />;
-    default:
-      return <DashboardView />;
-  }
+const ResumesPage: React.FC = () => {
+  return <ResumesView />;
+};
+
+const ApplicationsPage: React.FC = () => {
+  return <ApplicationsView />;
 };
 
 function App() {
   return (
     <AppContextProvider>
       <Layout>
-        <MainContent />
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/jobs/:jobId" element={<JobDetailsView />} />
+          <Route path="/resumes" element={<ResumesPage />} />
+          <Route path="/applications" element={<ApplicationsPage />} />
+        </Routes>
       </Layout>
     </AppContextProvider>
   );

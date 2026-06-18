@@ -1,10 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
+from bson import ObjectId
 
-from app.models.job import JobSearchRequest, JobResult, JobSearchResponse, JobListResponse, PaginationMeta
+from app.models.job import JobSearchRequest, JobResult, JobSearchResponse, JobListResponse, PaginationMeta, JobDetailResponse
 from app.api.deps import get_db
-from app.services.db_service import get_jobs, save_jobs
+from app.services.db_service import get_jobs, save_jobs, get_job_by_id
 from app.agents.job_workflow import search_jobs_workflow
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,11 @@ async def list_jobs(
         sort_order=sort_dir
     )
 
+    # Convert MongoDB _id (ObjectId) to string for each job
+    for job in jobs:
+        if "_id" in job and job["_id"] is not None:
+            job["_id"] = str(job["_id"])
+
     total_pages = (total + limit - 1) // limit
 
     pagination = PaginationMeta(
@@ -61,3 +67,26 @@ async def list_jobs(
     )
 
     return JobListResponse(jobs=jobs, pagination=pagination)
+
+
+@router.get("/jobs/{job_id}", response_model=JobDetailResponse)
+async def get_job_detail(job_id: str, db=Depends(get_db)):
+    """Retrieve a single job by its ObjectId with all detail fields."""
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Invalid job ID format: {job_id}")
+
+    job = await get_job_by_id(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    # Map MongoDB _id to the response id field
+    job["_id"] = str(job["_id"])
+
+    # Convert datetime fields to ISO strings for JSON serialization
+    for date_field in ("created_at", "updated_at"):
+        if date_field in job and job[date_field] is not None:
+            job[date_field] = job[date_field].isoformat()
+
+    return JobDetailResponse(**job)

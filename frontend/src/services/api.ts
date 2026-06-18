@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import type { JobFilterParams, JobListResponse } from "@/types";
+import type { JobFilterParams, JobListResponse, JobDetail } from "@/types";
 
 export class ApiError extends Error {
   status: number;
@@ -54,6 +54,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getJobById: async (jobId: string): Promise<JobDetail> => {
+    return request<JobDetail>(`/api/v1/jobs/jobs/${jobId}`);
+  },
+
   getJobs: async (params: JobFilterParams): Promise<JobListResponse> => {
     const query = new URLSearchParams();
     

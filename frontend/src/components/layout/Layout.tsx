@@ -1,15 +1,23 @@
 import React from "react";
-import { useApp } from "@/context/AppContext";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Briefcase, FileText, CheckSquare } from "lucide-react";
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { activeTab, setActiveTab } = useApp();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const navItems = [
-    { name: "Dashboard" as const, icon: Briefcase },
-    { name: "Resumes" as const, icon: FileText },
-    { name: "Applications" as const, icon: CheckSquare },
+    { name: "Dashboard" as const, path: "/", icon: Briefcase },
+    { name: "Resumes" as const, path: "/resumes", icon: FileText },
+    { name: "Applications" as const, path: "/applications", icon: CheckSquare },
   ];
+
+  const isActivePath = (path: string) => {
+    if (path === "/") {
+      return location.pathname === "/";
+    }
+    return location.pathname.startsWith(path);
+  };
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col font-sans">
@@ -20,7 +28,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             {/* Logo */}
             <div 
               className="flex items-center space-x-2.5 cursor-pointer group" 
-              onClick={() => setActiveTab("Dashboard")}
+              onClick={() => navigate("/")}
             >
               <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
                 <span className="text-white font-extrabold text-xl tracking-tight">JS</span>
@@ -34,11 +42,11 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <nav className="hidden md:flex space-x-1" aria-label="Global navigation">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = activeTab === item.name;
+                const isActive = isActivePath(item.path);
                 return (
                   <button
                     key={item.name}
-                    onClick={() => setActiveTab(item.name)}
+                    onClick={() => navigate(item.path)}
                     className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                       isActive
                         ? "bg-slate-100 text-blue-600 shadow-sm"
