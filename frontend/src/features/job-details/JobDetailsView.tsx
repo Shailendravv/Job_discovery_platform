@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ExternalLink, Upload, CloudUpload, CheckCircle, Download, Sparkles } from "lucide-react";
+import { ArrowLeft, ExternalLink, Upload, CloudUpload, CheckCircle, Download, Sparkles, FileText, AlertCircle, X } from "lucide-react";
 import { api, ApiError } from "@/services/api";
-import type { JobDetail } from "@/types";
+import { env } from "@/config/env";
+import type { JobDetail, ResumeUploadResponse, ResumeTailorResponse } from "@/types";
 
 export const JobDetailsView: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -11,10 +12,19 @@ export const JobDetailsView: React.FC = () => {
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [hasResume, setHasResume] = useState(true); // Toggle between state A/B
+
+  // Resume upload state
+  const [uploadedResume, setUploadedResume] = useState<ResumeUploadResponse | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Tailoring state
   const [isTailoring, setIsTailoring] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [showLoadingState, setShowLoadingState] = useState(false);
+  const [tailorResult, setTailorResult] = useState<ResumeTailorResponse | null>(null);
+  const [tailorError, setTailorError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!jobId) return;
@@ -39,21 +49,85 @@ export const JobDetailsView: React.FC = () => {
     fetchJobDetail();
   }, [jobId]);
 
-  const handleTailorResume = () => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError("Invalid file type. Please upload a PDF or DOCX file.");
+      return;
+    }
+
+    // Validate file size (10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError("File too large. Maximum size is 10 MB.");
+      return;
+    }
+
+    setUploadLoading(true);
+    setUploadError(null);
+
+    try {
+      const result = await api.uploadResume(file);
+      setUploadedResume(result);
+      setUploadLoading(false);
+    } catch (err) {
+      setUploadLoading(false);
+      if (err instanceof ApiError) {
+        setUploadError(err.message);
+      } else {
+        setUploadError("An unexpected error occurred while uploading the resume.");
+      }
+    } finally {
+      // Reset the file input so the same file can be re-uploaded
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemoveResume = () => {
+    setUploadedResume(null);
+    setUploadError(null);
+    setShowResults(false);
+    setTailorResult(null);
+    setTailorError(null);
+  };
+
+  const handleTailorResume = async () => {
+    if (!uploadedResume || !jobId || !job) return;
+
     setIsTailoring(true);
     setShowResults(false);
-    setShowLoadingState(false);
+    setShowLoadingState(true);
+    setTailorResult(null);
+    setTailorError(null);
 
-    // Simulate processing steps
-    setTimeout(() => {
-      setShowLoadingState(true);
-    }, 1000);
+    try {
+      const result = await api.tailorResume({
+        resume_id: uploadedResume.resume_id,
+        job_id: jobId,
+      });
 
-    setTimeout(() => {
       setShowLoadingState(false);
       setShowResults(true);
+      setTailorResult(result);
+    } catch (err) {
+      setShowLoadingState(false);
+      let errorMsg = "Tailoring failed. Please try again.";
+      if (err instanceof ApiError) {
+        errorMsg = err.message;
+      }
+      setTailorError(errorMsg);
+    } finally {
       setIsTailoring(false);
-    }, 3000);
+    }
   };
 
   const getSourceLabel = (src: string | null | undefined): string => {
@@ -237,37 +311,113 @@ export const JobDetailsView: React.FC = () => {
 
             <h2 className="text-base font-bold text-slate-900 mb-4">Resume Management</h2>
 
-            {hasResume ? (
-              /* State B: Active Resume */
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+
+            {/* Upload loading state */}
+            {uploadLoading ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="w-10 h-10 border-[3px] border-blue-200 border-t-blue-600 rounded-full animate-spin mb-3" />
+                <p className="text-sm font-bold text-slate-700">Uploading Resume...</p>
+                <p className="text-xs text-slate-400 mt-1">Parsing with AI & storing to cloud</p>
+              </div>
+            ) : uploadedResume ? (
+              /* State B: Resume Uploaded Successfully */
               <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 border-l-4 border-l-blue-600">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle className="w-5 h-5 text-blue-600 shrink-0" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">Active Resume</p>
-                      <p className="text-[11px] text-slate-500 font-medium">ID: {job.ref_id || `${job.id?.slice(-8).toUpperCase() || "MASTER"}`}</p>
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 border-l-4 border-l-emerald-500">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-slate-800 truncate">
+                        {uploadedResume.parsed_data?.name || "Active Resume"}
+                      </p>
+                      <p className="text-[11px] text-slate-500 font-medium truncate">
+                        ID: {uploadedResume.resume_id.slice(-8).toUpperCase()}
+                      </p>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 uppercase">MASTER</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase shrink-0">
+                    {uploadedResume.processing_status === "completed" ? "READY" : "PENDING"}
+                  </span>
                 </div>
-                <button
-                  onClick={() => setHasResume(false)}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer"
+
+                {/* Parsed skills preview */}
+                {uploadedResume.parsed_data?.skills && uploadedResume.parsed_data.skills.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {uploadedResume.parsed_data.skills.slice(0, 8).map((skill, idx) => (
+                      <span
+                        key={idx}
+                        className="text-[10px] font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-md"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                    {uploadedResume.parsed_data.skills.length > 8 && (
+                      <span className="text-[10px] font-medium text-slate-400 px-1 py-0.5">
+                        +{uploadedResume.parsed_data.skills.length - 8} more
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Cloudinary link */}
+                <a
+                  href={uploadedResume.cloudinary_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors group"
                 >
-                  <Upload className="w-4 h-4" />
-                  Upload Latest Resume
-                </button>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <CloudUpload className="w-4 h-4 text-slate-400 shrink-0" />
+                    <span className="text-[11px] text-slate-500 font-medium truncate">
+                      View on Cloudinary
+                    </span>
+                  </div>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
+                </a>
+
+                {/* Replace / Remove buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Replace Resume
+                  </button>
+                  <button
+                    onClick={handleRemoveResume}
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 bg-white text-red-500 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-50 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ) : (
-              /* State A: No Resume - Upload */
-              <button
-                onClick={() => setHasResume(true)}
-                className="w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-200 p-8 rounded-xl hover:bg-slate-50 transition-all group cursor-pointer"
-              >
-                <CloudUpload className="w-10 h-10 text-slate-300 group-hover:text-blue-500 transition-colors" />
-                <span className="text-xs font-bold text-slate-700">Upload Resume</span>
-                <span className="text-[11px] text-slate-400">PDF, DOCX up to 10MB</span>
-              </button>
+              /* State A: No Resume - Upload Area */
+              <div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-200 p-8 rounded-xl hover:bg-slate-50 transition-all group cursor-pointer"
+                >
+                  <CloudUpload className="w-10 h-10 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                  <span className="text-xs font-bold text-slate-700">Upload Resume</span>
+                  <span className="text-[11px] text-slate-400">PDF, DOCX up to 10MB</span>
+                </button>
+
+                {uploadError && (
+                  <div className="mt-3 flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-xl">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-700 font-medium">{uploadError}</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -280,12 +430,17 @@ export const JobDetailsView: React.FC = () => {
                 <Sparkles className="w-5 h-5 text-blue-200 animate-pulse" />
               </div>
               <p className="text-sm text-blue-100 mb-5 leading-relaxed">
-                Our AI will analyze <span className="font-bold text-white">Job ID: {job.ref_id || job.id?.slice(-8).toUpperCase() || "N/A"}</span> and optimize <span className="font-bold text-white">Resume ID: {job.ref_id ? `${job.ref_id}-RES` : "RES-8821"}</span> to highlight the most relevant skills and experiences.
+                Our AI will analyze <span className="font-bold text-white">Job ID: {job.ref_id || job.id?.slice(-8).toUpperCase() || "N/A"}</span>
+                {uploadedResume ? (
+                  <> and optimize <span className="font-bold text-white">Resume: {uploadedResume.parsed_data?.name || uploadedResume.resume_id.slice(-8).toUpperCase()}</span> to highlight the most relevant skills and experiences.</>
+                ) : (
+                  <> against your resume once uploaded.</>
+                )}
               </p>
               <button
                 onClick={handleTailorResume}
-                disabled={isTailoring}
-                className="w-full bg-white text-blue-800 py-3 rounded-xl text-xs font-bold hover:bg-blue-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                disabled={isTailoring || !uploadedResume}
+                className="w-full bg-white text-blue-800 py-3 rounded-xl text-xs font-bold hover:bg-blue-50 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isTailoring ? (
                   <>
@@ -309,7 +464,7 @@ export const JobDetailsView: React.FC = () => {
           )}
 
           {/* Results Panel */}
-          {showResults && (
+          {showResults && tailorResult && (
             <div className="bg-white border-2 border-blue-100 rounded-2xl p-6 shadow-sm animate-fade-in">
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
@@ -317,31 +472,75 @@ export const JobDetailsView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">Generation Complete</h3>
-                  <p className="text-xs text-slate-500">98% Job Match Score</p>
+                  <p className="text-xs text-slate-500">
+                    Resume tailored for <span className="font-semibold">{job?.title || "position"}</span>
+                  </p>
                 </div>
               </div>
 
               <div className="space-y-3 mb-6">
-                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4 text-slate-400" />
-                    <span className="text-xs text-slate-600 font-medium">View Document Source</span>
+                {uploadedResume && (
+                  <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <CloudUpload className="w-4 h-4 text-slate-400" />
+                      <span className="text-xs text-slate-600 font-medium">Original Resume</span>
+                    </div>
+                    <a
+                      href={uploadedResume.cloudinary_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-bold text-blue-600 hover:underline"
+                    >
+                      View on Cloudinary
+                    </a>
                   </div>
-                  <a
-                    href={job.apply_url || job.url || "#"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] font-bold text-blue-600 hover:underline"
-                  >
-                    Cloudinary URL
-                  </a>
-                </div>
+                )}
               </div>
 
-              <button className="w-full bg-blue-600 text-white py-3 rounded-xl text-xs font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer">
-                <Download className="w-4 h-4" />
-                Download Tailored Resume and Cover Letter
-              </button>
+              {/* Download buttons */}
+              <div className="flex flex-col gap-2">
+                {tailorResult.download_urls.pdf && (
+                  <a
+                    href={tailorResult.download_urls.pdf}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full bg-blue-600 text-white py-3 rounded-xl text-xs font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Tailored Resume (PDF)
+                  </a>
+                )}
+                {tailorResult.download_urls.docx && (
+                  <a
+                    href={tailorResult.download_urls.docx}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full bg-white text-slate-700 border border-slate-200 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-50 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Tailored Resume (DOCX)
+                  </a>
+                )}
+                {tailorResult.download_urls.cover_letter_pdf && (
+                  <a
+                    href={tailorResult.download_urls.cover_letter_pdf}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-100 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Cover Letter (PDF)
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Tailor Error */}
+          {tailorError && (
+            <div className="flex items-start gap-2 p-4 bg-red-50 border border-red-100 rounded-2xl animate-fade-in">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-700 font-medium">{tailorError}</p>
             </div>
           )}
         </aside>

@@ -66,3 +66,58 @@ export interface JobDetail {
   created_at: string | null;
   updated_at: string | null;
 }
+
+// ── Resume Upload Types ──
+
+export interface EducationEntry {
+  institution?: string | null;
+  degree?: string | null;
+  year?: number | null;
+}
+
+export interface ExperienceEntry {
+  company?: string | null;
+  title?: string | null;
+  duration?: string | null;
+  description?: string | null;
+}
+
+export interface ParsedResumeData {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  education?: EducationEntry[];
+  experience?: ExperienceEntry[];
+  skills?: string[];
+  languages?: string[];
+  certifications?: string[];
+}
+
+export interface ResumeUploadResponse {
+  resume_id: string;
+  cloudinary_url: string;
+  parsed_data: ParsedResumeData;
+  extracted_text_preview: string;
+  processing_status: string;
+}
+
+// ── Resume Tailor Types ──
+
+export interface ResumeTailorRequest {
+  resume_id: string;
+  job_id: string;
+}
+
+export interface DownloadUrls {
+  pdf: string;
+  docx: string;
+  cover_letter_pdf?: string | null;
+}
+
+export interface ResumeTailorResponse {
+  resume_id: string;
+  job_id: string;
+  tailored_text: string;
+  cover_letter: string;
+  download_urls: DownloadUrls;
+}
