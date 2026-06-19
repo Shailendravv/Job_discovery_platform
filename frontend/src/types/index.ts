@@ -47,6 +47,28 @@ export interface JobSearchResponse {
   saved: number;
 }
 
+export interface ActiveResumeInfo {
+  resume_id: string;
+  cloudinary_url: string;
+  filename: string;
+  name?: string | null;
+  skills: string[];
+  processing_status: string;
+}
+
+export interface TailoringDownloadUrls {
+  pdf?: string | null;
+  docx?: string | null;
+  cover_letter_pdf?: string | null;
+}
+
+export interface TailoringStatus {
+  tailored: boolean;
+  resume_id?: string | null;
+  job_id?: string | null;
+  download_urls?: TailoringDownloadUrls | null;
+}
+
 export interface JobDetail {
   id: string;
   title: string;
@@ -65,6 +87,9 @@ export interface JobDetail {
   ref_id: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // Resume lifecycle fields
+  active_resume?: ActiveResumeInfo | null;
+  tailoring_status?: TailoringStatus | null;
 }
 
 // ── Resume Upload Types ──

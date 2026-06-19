@@ -26,6 +26,9 @@ export const JobDetailsView: React.FC = () => {
   const [tailorResult, setTailorResult] = useState<ResumeTailorResponse | null>(null);
   const [tailorError, setTailorError] = useState<string | null>(null);
 
+  // Download state (tracking which URL is being downloaded)
+  const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (!jobId) return;
 
@@ -35,6 +38,36 @@ export const JobDetailsView: React.FC = () => {
       try {
         const data = await api.getJobById(jobId);
         setJob(data);
+
+        // ── Hydrate resume lifecycle state from backend ──
+        if (data.active_resume) {
+          setUploadedResume({
+            resume_id: data.active_resume.resume_id,
+            cloudinary_url: data.active_resume.cloudinary_url,
+            parsed_data: {
+              name: data.active_resume.name,
+              skills: data.active_resume.skills,
+            },
+            extracted_text_preview: "",
+            processing_status: data.active_resume.processing_status,
+          });
+        }
+
+        if (data.tailoring_status?.tailored && data.tailoring_status.download_urls) {
+          const urls = data.tailoring_status.download_urls;
+          setTailorResult({
+            resume_id: data.tailoring_status.resume_id || "",
+            job_id: data.tailoring_status.job_id || "",
+            tailored_text: "",
+            cover_letter: "",
+            download_urls: {
+              pdf: urls.pdf || "",
+              docx: urls.docx || "",
+              cover_letter_pdf: urls.cover_letter_pdf || null,
+            },
+          });
+          setShowResults(true);
+        }
       } catch (err) {
         if (err instanceof ApiError) {
           setError(err.message);
@@ -76,6 +109,9 @@ export const JobDetailsView: React.FC = () => {
     try {
       const result = await api.uploadResume(file);
       setUploadedResume(result);
+      // New resume invalidates any previous tailoring
+      setTailorResult(null);
+      setShowResults(false);
       setUploadLoading(false);
     } catch (err) {
       setUploadLoading(false);
@@ -127,6 +163,42 @@ export const JobDetailsView: React.FC = () => {
       setTailorError(errorMsg);
     } finally {
       setIsTailoring(false);
+    }
+  };
+
+  const handleDownload = async (url: string, label: string) => {
+    if (downloadingUrls.has(url)) return;
+
+    setDownloadingUrls((prev) => new Set(prev).add(url));
+
+    try {
+      const { blob, filename } = await api.downloadFromUrl(url);
+
+      // Create a blob URL and trigger download
+      const blobUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(blobUrl);
+      }, 100);
+    } catch (err) {
+      let errorMsg = `Failed to download ${label}. Please try again.`;
+      if (err instanceof ApiError) {
+        errorMsg = err.message;
+      }
+      setTailorError(errorMsg);
+    } finally {
+      setDownloadingUrls((prev) => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
+      });
     }
   };
 
@@ -500,37 +572,46 @@ export const JobDetailsView: React.FC = () => {
               {/* Download buttons */}
               <div className="flex flex-col gap-2">
                 {tailorResult.download_urls.pdf && (
-                  <a
-                    href={tailorResult.download_urls.pdf}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full bg-blue-600 text-white py-3 rounded-xl text-xs font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                  <button
+                    onClick={() => handleDownload(tailorResult.download_urls.pdf, "Tailored Resume PDF")}
+                    disabled={downloadingUrls.has(tailorResult.download_urls.pdf)}
+                    className="w-full bg-blue-600 text-white py-3 rounded-xl text-xs font-bold hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
+                    {downloadingUrls.has(tailorResult.download_urls.pdf) ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                     Download Tailored Resume (PDF)
-                  </a>
+                  </button>
                 )}
                 {tailorResult.download_urls.docx && (
-                  <a
-                    href={tailorResult.download_urls.docx}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full bg-white text-slate-700 border border-slate-200 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-50 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                  <button
+                    onClick={() => handleDownload(tailorResult.download_urls.docx, "Tailored Resume DOCX")}
+                    disabled={downloadingUrls.has(tailorResult.download_urls.docx)}
+                    className="w-full bg-white text-slate-700 border border-slate-200 py-2.5 rounded-xl text-xs font-bold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
+                    {downloadingUrls.has(tailorResult.download_urls.docx) ? (
+                      <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                     Download Tailored Resume (DOCX)
-                  </a>
+                  </button>
                 )}
                 {tailorResult.download_urls.cover_letter_pdf && (
-                  <a
-                    href={tailorResult.download_urls.cover_letter_pdf}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-100 flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                  <button
+                    onClick={() => handleDownload(tailorResult.download_urls.cover_letter_pdf, "Cover Letter PDF")}
+                    disabled={downloadingUrls.has(tailorResult.download_urls.cover_letter_pdf)}
+                    className="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
+                    {downloadingUrls.has(tailorResult.download_urls.cover_letter_pdf) ? (
+                      <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                     Download Cover Letter (PDF)
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

@@ -100,6 +100,38 @@ export const api = {
     });
   },
 
+  downloadFromUrl: async (url: string): Promise<{ blob: Blob; filename: string }> => {
+    const baseUrl = env.apiUrl.endsWith("/") ? env.apiUrl.slice(0, -1) : env.apiUrl;
+
+    const response = await fetch(`${baseUrl}/api/v1/resumes/download-from-url`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+
+    if (!response.ok) {
+      let errorInfo;
+      try {
+        errorInfo = await response.json();
+      } catch {
+        errorInfo = null;
+      }
+      throw new ApiError(
+        errorInfo?.detail || response.statusText || "Failed to download file.",
+        response.status,
+        errorInfo
+      );
+    }
+
+    // Extract filename from Content-Disposition header
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const filenameMatch = disposition.match(/filename="?(.+?)"?$/);
+    const filename = filenameMatch ? filenameMatch[1] : "download";
+
+    const blob = await response.blob();
+    return { blob, filename };
+  },
+
   getJobs: async (params: JobFilterParams): Promise<JobListResponse> => {
     const query = new URLSearchParams();
     

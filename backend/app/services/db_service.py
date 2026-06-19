@@ -174,3 +174,17 @@ async def save_tailor_session(db: AsyncIOMotorDatabase, session: dict) -> str:
     session["updated_at"] = now
     result = await db["tailor_sessions"].insert_one(session)
     return str(result.inserted_id)
+
+
+async def get_latest_resume(db: AsyncIOMotorDatabase) -> Optional[dict]:
+    """Fetch the most recently uploaded resume."""
+    cursor = db["resumes"].find().sort("created_at", -1).limit(1)
+    results = await cursor.to_list(1)
+    return results[0] if results else None
+
+
+async def get_tailor_session_for_job(db: AsyncIOMotorDatabase, job_id: str) -> Optional[dict]:
+    """Fetch the latest tailor session for the given job_id."""
+    cursor = db["tailor_sessions"].find({"job_id": job_id}).sort("created_at", -1).limit(1)
+    results = await cursor.to_list(1)
+    return results[0] if results else None
