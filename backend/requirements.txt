@@ -15,3 +15,8 @@ mcp
 cloudinary
 python-docx
 groq
+pymupdf
+mammoth
+htmldocx
+beautifulsoup4
+playwright

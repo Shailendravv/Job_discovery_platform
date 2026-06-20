@@ -16,6 +16,7 @@ from app.models.resume import (
 from app.api.deps import get_db
 from app.services.PDF_service import extract_text_from_pdf, generate_pdf
 from app.services.docx_service import extract_text_from_docx, generate_docx
+from app.services.html_service import docx_to_html, elements_to_html, html_to_docx, html_to_pdf_async, extract_text_from_html, plain_text_to_html
 from app.services.cloudinary_service import (
     upload_file,
     get_download_url,
@@ -23,7 +24,7 @@ from app.services.cloudinary_service import (
     parse_cloudinary_url,
 )
 from app.services.resume_parser import parse_resume_text
-from app.services.resume_tailor import tailor_resume_text
+from app.services.resume_tailor import tailor_resume_text, tailor_resume_html
 from app.services.cover_letter import generate_cover_letter
 from app.services.db_service import save_resume, get_resume_by_id, save_tailor_session
 
@@ -59,9 +60,10 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
             detail=f"File too large ({len(raw_bytes)} bytes). Maximum: {MAX_FILE_SIZE} bytes (10 MB)",
         )
 
-    # ── Extract text ──
+    # ── Extract text and convert to HTML ──
+    is_pdf = file.content_type == "application/pdf"
     try:
-        if file.content_type == "application/pdf":
+        if is_pdf:
             extracted_text = extract_text_from_pdf(raw_bytes)
         else:
             extracted_text = extract_text_from_docx(raw_bytes)
@@ -72,9 +74,22 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
     if not extracted_text.strip():
         raise HTTPException(status_code=422, detail="No text could be extracted from the uploaded file")
 
+    # ── Convert to HTML (preserving formatting) ──
+    try:
+        if is_pdf:
+            # For PDFs, use structured extraction then convert to HTML
+            from app.services.PDF_service import extract_structured_from_pdf
+            elements = extract_structured_from_pdf(raw_bytes)
+            resume_html = elements_to_html(elements)
+        else:
+            # For DOCX, use mammoth to get HTML directly
+            resume_html = docx_to_html(raw_bytes)
+    except Exception as e:
+        log.warning("HTML conversion failed, using plain text: %s", e)
+        resume_html = plain_text_to_html(extracted_text)
+
     # ── Upload original to Cloudinary ──
     # Determine resource_type: PDFs must use "image", DOCX uses "raw"
-    is_pdf = file.content_type == "application/pdf"
     resource_type = "image" if is_pdf else "raw"
 
     # public_id must NOT include file extension per Cloudinary docs
@@ -124,9 +139,10 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
         "file_size": len(raw_bytes),
         "extracted_text": extracted_text,
         "extracted_text_length": len(extracted_text),
+        "resume_html": resume_html,
         "parsed_data": safe_parsed,
         "processing_status": processing_status,
-        "schema_version": 1,
+        "schema_version": 3,
     }
     resume_id = await save_resume(db, resume_doc)
 
@@ -159,19 +175,42 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
         raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
 
     resume_text = resume.get("extracted_text", "")
+    resume_html = resume.get("resume_html", "")
     parsed = resume.get("parsed_data", {})
 
-    # ── Tailor resume ──
+    # ── Tailor resume (HTML round-trip) ──
+    if resume_html:
+        # New resume with HTML — use the HTML tailoring path
+        try:
+            tailored_html = await tailor_resume_html(resume_html, job)
+            tailored_text = ""  # extracted from HTML below if needed
+        except Exception as e:
+            log.error("HTML resume tailoring failed: %s", e, exc_info=True)
+            return ResumeTailorErrorResponse(
+                resume_id=request.resume_id,
+                job_id=request.job_id,
+                error=f"Resume tailoring failed: {str(e)}",
+                tailored_text=resume_text,
+            )
+    else:
+        # Legacy resume without HTML — fall back to plain text tailoring
+        try:
+            tailored_text = await tailor_resume_text(resume_text, job)
+            tailored_html = plain_text_to_html(tailored_text)
+        except Exception as e:
+            log.error("Resume tailoring failed: %s", e, exc_info=True)
+            return ResumeTailorErrorResponse(
+                resume_id=request.resume_id,
+                job_id=request.job_id,
+                error=f"Resume tailoring failed: {str(e)}",
+                tailored_text=resume_text,
+            )
+
+    # Extract plain text from HTML for response and cover letter context
     try:
-        tailored_text = await tailor_resume_text(resume_text, job)
-    except Exception as e:
-        log.error("Resume tailoring failed: %s", e, exc_info=True)
-        return ResumeTailorErrorResponse(
-            resume_id=request.resume_id,
-            job_id=request.job_id,
-            error=f"Resume tailoring failed: {str(e)}",
-            tailored_text=resume_text,
-        )
+        tailored_text = extract_text_from_html(tailored_html)
+    except Exception:
+        pass
 
     # ── Generate cover letter ──
     try:
@@ -189,8 +228,8 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
 
     # ── Generate downloadable files ──
     try:
-        pdf_bytes = generate_pdf(tailored_text)
-        docx_bytes = generate_docx(tailored_text)
+        docx_bytes = html_to_docx(tailored_html)
+        pdf_bytes = await html_to_pdf_async(tailored_html)
         cover_pdf_bytes = generate_pdf(cover_letter)
 
         session_id = uuid.uuid4().hex
