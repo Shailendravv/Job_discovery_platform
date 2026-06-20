@@ -2,6 +2,7 @@
 Cover letter generation service.
 Uses Groq to write a professional cover letter based on resume and job description.
 """
+
 import logging
 from app.core.llm import call_llm
 
@@ -60,15 +61,21 @@ async def generate_cover_letter(
 
     prompt = COVER_LETTER_PROMPT.format(
         candidate_name=candidate_name,
-        candidate_skills=", ".join(candidate_skills) if candidate_skills else "Various professional skills",
-        candidate_experience=candidate_experience[:4000] if candidate_experience else "Not provided",
+        candidate_skills=(
+            ", ".join(candidate_skills)
+            if candidate_skills
+            else "Various professional skills"
+        ),
+        candidate_experience=(
+            candidate_experience[:4000] if candidate_experience else "Not provided"
+        ),
         job_title=job_title,
         company_name=company_name or "Your Company",
         job_description=job_description[:6000] if job_description else "Not provided",
     )
 
     try:
-        letter = call_llm(prompt, json_format=False, provider="groq")
+        letter = call_llm(prompt, json_format=False)
         return letter.strip()
     except Exception as e:
         log.error("Cover letter generation failed: %s", e, exc_info=True)

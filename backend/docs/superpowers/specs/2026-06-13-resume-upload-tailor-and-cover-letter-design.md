@@ -580,7 +580,7 @@ PARSE_PROMPT = """..."""  # As designed in section 9.1
 async def parse_resume_text(extracted_text: str) -> dict:
     """Parse resume text into structured data using Groq LLM."""
     prompt = PARSE_PROMPT.format(extracted_text=extracted_text)
-    raw_response = call_llm(prompt, provider="groq")
+    raw_response = call_llm(prompt,   )
     # Clean and parse JSON
     cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response).strip()
     cleaned = re.sub(r"\s*```$", "", cleaned).strip()
@@ -606,7 +606,7 @@ async def tailor_resume(resume_text: str, job: dict) -> str:
         job_description=job.get("description", ""),
         job_skills=", ".join(job.get("skills", []))
     )
-    return call_llm(prompt, provider="groq")
+    return call_llm(prompt)
 ```
 
 ### 10.5 `backend/app/services/cover_letter.py`
@@ -635,7 +635,7 @@ async def generate_cover_letter(
         company_name=company_name,
         job_description=job_description
     )
-    return call_llm(prompt, provider="groq")
+    return call_llm(prompt)
 ```
 
 ---

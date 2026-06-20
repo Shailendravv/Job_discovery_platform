@@ -360,7 +360,7 @@ async def tailor_resume_structured(elements: list[ResumeElement], job: dict) -> 
     )
 
     try:
-        raw = await call_llm(prompt, json_format=True, provider="groq")
+        raw = await call_llm(prompt, json_format=True)
         parsed = json.loads(raw) if isinstance(raw, str) else raw
         tailored = [ResumeElement(**el) for el in parsed]
         return tailored

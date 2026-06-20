@@ -2,6 +2,7 @@
 Resume tailoring service.
 Uses Groq to rewrite resume sections based on job description.
 """
+
 import json
 import logging
 from app.core.llm import call_llm
@@ -115,7 +116,7 @@ async def tailor_resume_text(resume_text: str, job: dict) -> str:
     )
 
     try:
-        tailored = call_llm(prompt, json_format=False, provider="groq")
+        tailored = call_llm(prompt, json_format=False)
         return tailored.strip()
     except Exception as e:
         log.error("Resume tailoring failed: %s", e, exc_info=True)
@@ -153,16 +154,19 @@ async def tailor_resume_html(resume_html: str, job: dict) -> str:
     )
 
     try:
-        tailored = call_llm(prompt, json_format=False, provider="groq")
+        tailored = call_llm(prompt, json_format=False)
         # Validate/sanitize the returned HTML
         from app.services.html_service import validate_html
+
         return validate_html(tailored.strip())
     except Exception as e:
         log.error("HTML resume tailoring failed: %s", e, exc_info=True)
         return resume_html
 
 
-async def tailor_resume_structured(elements: list[ResumeElement], job: dict) -> list[ResumeElement]:
+async def tailor_resume_structured(
+    elements: list[ResumeElement], job: dict
+) -> list[ResumeElement]:
     """
     Tailor structured resume elements to match a job description.
     Preserves bold/type/links per element; only rewrites "text" content
@@ -171,7 +175,9 @@ async def tailor_resume_structured(elements: list[ResumeElement], job: dict) -> 
     if not elements:
         return elements
 
-    resume_json = json.dumps([el.model_dump() for el in elements], ensure_ascii=False, indent=2)[:16000]
+    resume_json = json.dumps(
+        [el.model_dump() for el in elements], ensure_ascii=False, indent=2
+    )[:16000]
 
     job_title = job.get("title", "Unknown Position")
     job_description = job.get("description", "")
@@ -185,7 +191,7 @@ async def tailor_resume_structured(elements: list[ResumeElement], job: dict) -> 
     )
 
     try:
-        raw = call_llm(prompt, json_format=True, provider="groq")
+        raw = call_llm(prompt, json_format=True)
         parsed = json.loads(raw) if isinstance(raw, str) else raw
         if isinstance(parsed, dict) and "elements" in parsed:
             raw_elements = parsed["elements"]

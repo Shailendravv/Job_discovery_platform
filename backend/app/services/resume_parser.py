@@ -2,6 +2,7 @@
 LLM-powered resume parser service.
 Uses Groq to extract structured data from resume text.
 """
+
 import json
 import re
 import logging
@@ -38,12 +39,23 @@ async def parse_resume_text(extracted_text: str) -> dict:
     Missing fields will have None or empty list values.
     """
     if not extracted_text or not extracted_text.strip():
-        return {"name": "", "email": "", "phone": "", "education": [], "experience": [], "skills": [], "languages": [], "certifications": []}
+        return {
+            "name": "",
+            "email": "",
+            "phone": "",
+            "education": [],
+            "experience": [],
+            "skills": [],
+            "languages": [],
+            "certifications": [],
+        }
 
-    prompt = PARSE_PROMPT_TEMPLATE.format(extracted_text=extracted_text[:15000])  # Truncate to avoid token limits
+    prompt = PARSE_PROMPT_TEMPLATE.format(
+        extracted_text=extracted_text[:15000]
+    )  # Truncate to avoid token limits
 
     try:
-        raw_response = call_llm(prompt, json_format=True, provider="groq")
+        raw_response = call_llm(prompt, json_format=True)
 
         # Clean response: strip markdown code blocks
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response).strip()
