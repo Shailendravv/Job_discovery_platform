@@ -27,54 +27,69 @@ from app.services.html_service import (
 log = logging.getLogger(__name__)
 
 
+# ── Section types that should NEVER be sent to the LLM ──
+# These are purely factual sections (institutions, degrees, dates, license names)
+# where rewriting would only introduce errors or JD content bleed.
+_NON_EDITABLE_SECTION_TYPES = frozenset({
+    "education",
+    "certifications",
+    "languages",
+    "publications",
+})
+
+
 # ── Section-level HTML prompt (one section at a time) ──
 
 SECTION_HTML_PROMPT = """You are a professional resume writer. You are tailoring ONE section of a resume to match a job description.
 
-Job Title: {job_title}
-Job Description:
+<job_title>{job_title}</job_title>
+
+<job_description>
 {job_description}
+</job_description>
 
-Required Skills: {job_skills}
+<required_skills>{job_skills}</required_skills>
 
-Resume Section (type: {section_type}, name: "{section_name}"):
+<resume_section type="{section_type}" name="{section_name}">
 {section_html}
+</resume_section>
 
 Instructions:
-1. Analyze the job description and identify the TOP 3-5 most important skills and technologies required.
-2. Rewrite the TEXT CONTENT of this section to STRONGLY EMPHASIZE those top skills — use exact keyword matches from the JD.
-3. For skills less relevant to THIS specific job (e.g., backend/AI skills when the JD is frontend-focused): de-emphasize them. Keep them brief or drop them.
-4. Reorder bullet/paragraph content to put the most relevant points first.
-5. CRITICAL: PRESERVE ALL HTML TAGS AND STRUCTURE EXACTLY as they are. Only change text content between tags.
-6. CRITICAL: Do NOT change your name, contact info, job titles, company names, dates, or section headings.
-7. Keep all factual information accurate — do NOT fabricate experience, titles, dates, or metrics.
-8. If this section is already a strong match for the JD, return it unchanged.
-9. Return ONLY the modified HTML — no commentary, no markdown formatting."""
+1. Only rewrite the content that is inside the <resume_section>...</resume_section> tags. Do NOT add content that was not already inside those tags.
+2. Everything inside the <job_description> is reference material only — never copy its headings, structure, sentences, or boilerplate into your output.
+3. Rewrite the TEXT CONTENT of the <resume_section> to better align with the job's top skills. Use stronger action verbs. Keep the same facts, same entities, same experiences, same roles.
+4. CRITICAL: PRESERVE ALL HTML TAGS AND STRUCTURE EXACTLY as they are. Only change text content between tags.
+5. CRITICAL: Do NOT change your name, contact info, job titles, company names, dates, or section headings.
+6. Keep all factual information accurate — do NOT fabricate experience, titles, dates, or metrics.
+7. If this section is already a strong match for the JD, return it unchanged.
+8. Return ONLY the modified HTML that belongs inside <resume_section> — no commentary, no markdown formatting, no code fences."""
 
 
 # ── Section-level plain text prompt ──
 
 SECTION_TEXT_PROMPT = """You are a professional resume writer. You are tailoring ONE section of a resume to match a job description.
 
-Job Title: {job_title}
-Job Description:
+<job_title>{job_title}</job_title>
+
+<job_description>
 {job_description}
+</job_description>
 
-Required Skills: {job_skills}
+<required_skills>{job_skills}</required_skills>
 
-Resume Section (type: {section_type}, name: "{section_name}"):
+<resume_section type="{section_type}" name="{section_name}">
 {section_text}
+</resume_section>
 
 Instructions:
-1. Analyze the job description and identify the TOP 3-5 most important skills and technologies required.
-2. Rewrite this section's content to STRONGLY EMPHASIZE those top skills — use exact keyword matches from the JD.
-3. For skills less relevant to THIS specific job (e.g., backend/AI skills when the JD is frontend-focused): de-emphasize them.
-4. Reorder the content to put the most relevant points first.
-5. CRITICAL: Do NOT change your name, job titles, company names, dates, or section headings.
-6. Keep all factual information accurate — do NOT fabricate experience, titles, dates, or metrics.
-7. Use strong action verbs specific to the job's domain.
-8. If this section is already a strong match for the JD, return it unchanged.
-9. Return ONLY the modified text — no commentary, no markdown formatting."""
+1. Only rewrite the content that is inside the <resume_section>...</resume_section> tags. Do NOT add content that was not already inside those tags.
+2. Everything inside the <job_description> is reference material only — never copy its headings, structure, sentences, or boilerplate into your output.
+3. Rewrite the TEXT CONTENT of the <resume_section> to better align with the job's top skills. Use stronger action verbs. Keep the same facts, same entities, same experiences, same roles.
+4. CRITICAL: Do NOT change your name, job titles, company names, dates, or section headings.
+5. Keep all factual information accurate — do NOT fabricate experience, titles, dates, or metrics.
+6. Use strong action verbs specific to the job's domain to reword the existing content.
+7. If this section is already a strong match for the JD, return it unchanged.
+8. Return ONLY the modified content that belongs inside <resume_section> — no commentary, no markdown formatting, no tags, no fences."""
 
 
 # ── Section parsing for plain text resumes (dynamic) ──
@@ -96,9 +111,23 @@ _SECTION_HEADING_WORDS = [
 ]
 
 
-def _is_text_heading_line(stripped: str) -> bool:
-    """Dynamically check if a plain text line looks like a section heading."""
+def _is_text_heading_line(stripped: str, *, prev_line_empty: bool = True) -> bool:
+    """Dynamically check if a plain text line looks like a section heading.
+
+    Args:
+        stripped: The stripped text of the current line.
+        prev_line_empty: Whether the preceding line was empty (blank line).
+                         Section headings in resumes are always preceded by
+                         a blank line — without this guard, short capitalized
+                         lines inside bullet content get misidentified.
+    """
     if not stripped or len(stripped) > 60:
+        return False
+
+    # A genuine section heading is almost always preceded by a blank line.
+    # Without this guard, short capitalized lines inside bullets (e.g. a
+    # project name or inline skill label) get misidentified as headings.
+    if not prev_line_empty:
         return False
 
     # ALL-CAPS line (most resume section headers)
@@ -152,9 +181,10 @@ def _split_text_into_sections(text: str) -> list[dict]:
     Split plain text into sections by dynamically detecting heading lines.
 
     Uses heuristics:
-    1. ALL-CAPS short lines containing section-like words
-    2. Short lines (< 40 chars) with common section heading words
-    3. Content before the first detected heading is treated as "preamble"
+    1. Section headings must be preceded by a blank line (or start of text).
+    2. ALL-CAPS short lines containing section-like words
+    3. Short lines (< 40 chars) with common section heading words
+    4. Content before the first detected heading is treated as "preamble"
 
     ALL sections are editable — the LLM decides what to rewrite.
 
@@ -167,10 +197,16 @@ def _split_text_into_sections(text: str) -> list[dict]:
     current_heading = ""
     current_lines = []
 
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.strip()
 
-        if _is_text_heading_line(stripped):
+        # A line must be preceded by a blank line (or be the first line)
+        # to be considered a section heading. This prevents short capitalized
+        # lines inside bullet content (skill names, project names) from being
+        # misidentified as section boundaries.
+        prev_line_empty = i == 0 or not lines[i - 1].strip()
+
+        if _is_text_heading_line(stripped, prev_line_empty=prev_line_empty):
             # Save previous section
             if current_lines:
                 sections.append({
@@ -238,9 +274,7 @@ async def tailor_resume_html(resume_html: str, job: dict) -> str:
         "Resume has %d sections: %s",
         len(sections),
         [s["type"] for s in sections],
-    )
-
-    # ── Process each section (ALL sections are sent to LLM — it decides what to rewrite) ──
+    )        # ── Process each section ──
     tailored_count = 0
     for section in sections:
         section_type = section.get("type", "unknown")
@@ -248,6 +282,12 @@ async def tailor_resume_html(resume_html: str, job: dict) -> str:
         section_body = section.get("body_html", "")
 
         if not section_body.strip():
+            continue
+
+        # Skip purely factual sections (education, certifications, etc.)
+        # These should NEVER be sent to the LLM — they are reference-only data.
+        if section_type in _NON_EDITABLE_SECTION_TYPES:
+            log.debug("Skipping non-editable section '%s' (%s)", section_type, section_name)
             continue
 
         # Truncate section content if needed (sections should be small, but safety check)
@@ -264,6 +304,9 @@ async def tailor_resume_html(resume_html: str, job: dict) -> str:
 
         try:
             tailored = call_llm(prompt, json_format=False, max_tokens=4096)
+
+            # Debug: log raw LLM output to diagnose JD content bleed issues
+            log.debug("Raw LLM output for section '%s': %r", section_type, tailored[:300])
 
             # Validate the tailored section HTML
             validated = validate_html(tailored.strip())
@@ -287,24 +330,55 @@ async def tailor_resume_html(resume_html: str, job: dict) -> str:
         return resume_html
 
 
+# ── Fallback prompt with explicit education preservation instruction ──
+
+FALLBACK_HTML_PROMPT = """You are a professional resume writer. You are tailoring a resume to match a job description.
+
+<job_title>{job_title}</job_title>
+
+<job_description>
+{job_description}
+</job_description>
+
+<required_skills>{job_skills}</required_skills>
+
+<resume>
+{resume_html}
+</resume>
+
+IMPORTANT — PRESERVE THESE SECTIONS EXACTLY AS WRITTEN (do NOT modify any content under these headings):
+- EDUCATION (or "Academic Background", "Academic History"): institutions, degrees, dates, and all content must remain EXACTLY as in the original.
+- CERTIFICATIONS (or "Certifications & Licenses"): must remain EXACTLY as in the original.
+- LANGUAGES: must remain EXACTLY as in the original.
+- PUBLICATIONS (or "Publications & Awards"): must remain EXACTLY as in the original.
+
+Instructions:
+1. Rewrite only the work experience, skills, summary/profile sections — even if they use different headings like "Professional Experience", "Technical Skills", "Career Summary", "Work History", etc.
+2. Everything inside <job_description> is reference material only — never copy its headings, structure, sentences, or boilerplate into your output.
+3. Rewrite TEXT CONTENT to better align with the job's top skills. Use stronger action verbs.
+4. CRITICAL: PRESERVE ALL HTML TAGS AND STRUCTURE EXACTLY as they are. Only change text content between tags.
+5. CRITICAL: Do NOT change your name, contact info, job titles, company names, dates, or section headings.
+6. Keep all factual information accurate — do NOT fabricate experience, titles, dates, or metrics.
+7. If a section is already a strong match for the JD, return it unchanged.
+8. Return ONLY the modified HTML — no commentary, no markdown formatting, no code fences."""
+
+
 async def _fallback_html_tailor(resume_html: str, job: dict) -> str:
     """
     Fallback: send the entire resume HTML in one call.
     Used only if section parsing completely fails.
 
-    Keeps max_tokens at default 4096 since this is a fallback path.
+    Uses a dedicated prompt that explicitly lists which sections
+    must be preserved verbatim (education, certifications, etc.).
     """
     job_title = job.get("title", "Unknown Position")
     job_description = job.get("description", "")
     job_skills = ", ".join(job.get("skills", []))
 
     truncated_html = resume_html[:12000]
-    section_name = "full resume"
 
-    prompt = SECTION_HTML_PROMPT.format(
-        section_html=truncated_html,
-        section_type="unknown",
-        section_name=section_name,
+    prompt = FALLBACK_HTML_PROMPT.format(
+        resume_html=truncated_html,
         job_title=job_title,
         job_description=job_description[:8000],
         job_skills=job_skills or "Not specified",
@@ -356,13 +430,19 @@ async def tailor_resume_text(resume_text: str, job: dict) -> str:
         [s["type"] for s in sections],
     )
 
-    # ── Process each section (ALL sections are sent — LLM decides what to rewrite) ──
+    # ── Process each section ──
     tailored_count = 0
     for section in sections:
         section_type = section.get("type", "unknown")
         section_content = section.get("content", "")
 
         if not section_content.strip():
+            continue
+
+        # Skip purely factual sections (education, certifications, etc.)
+        # These should NEVER be sent to the LLM — they are reference-only data.
+        if section_type in _NON_EDITABLE_SECTION_TYPES:
+            log.debug("Skipping non-editable text section '%s' (%s)", section_type, section.get("heading", ""))
             continue
 
         # Truncate section content as safety net
@@ -380,6 +460,9 @@ async def tailor_resume_text(resume_text: str, job: dict) -> str:
         try:
             tailored = call_llm(prompt, json_format=False, max_tokens=4096)
             tailored = tailored.strip()
+
+            # Debug: log raw LLM output to diagnose JD content bleed issues
+            log.debug("Raw LLM output for section '%s': %r", section_type, tailored[:300])
 
             if tailored and len(tailored) > 10:
                 # Preserve the section heading if the LLM dropped it
@@ -420,25 +503,34 @@ to best match the job, returning the SAME JSON shape back.
 Each input element has: "text", "type" (heading/subheading/bullet/normal),
 "bold" (true/false), "links" (array of {{text, url}}).
 
-Candidate's Resume (JSON):
-{resume_json}
+<job_title>{job_title}</job_title>
 
-Job Title: {job_title}
-Job Description:
+<job_description>
 {job_description}
-Required Skills: {job_skills}
+</job_description>
+
+<required_skills>{job_skills}</required_skills>
+
+<resume_elements>
+{resume_json}
+</resume_elements>
 
 Instructions:
-1. Rewrite "text" fields to better match the job — stronger action verbs,
+1. Only rewrite the "text" fields of elements inside <resume_elements>...</resume_elements>.
+2. Everything inside <job_description> is reference material only — never copy its
+   headings, structure, sentences, or boilerplate into your output.
+3. Rewrite "text" fields to better match the job — stronger action verbs,
    relevant keywords, quantified achievements where the original supports it.
-2. You may reorder bullet elements within a section to put the most relevant
+4. You may reorder bullet elements within a section to put the most relevant
    ones first. Do NOT reorder heading elements or move bullets across sections.
-3. Do NOT fabricate experience, employers, dates, or qualifications not present
+5. Do NOT add new elements, sections, experiences, education entries, projects,
+   or skills that did not exist in the input.
+6. Do NOT fabricate experience, employers, dates, or qualifications not present
    in the input.
-4. Preserve "type", "bold", and "links" EXACTLY as given on each element you keep.
+7. Preserve "type", "bold", and "links" EXACTLY as given on each element you keep.
    If you split one bullet into two, copy the original element's "type" and
    "bold" onto both, and keep "links" only on the one that contains the link text.
-5. Do not add new elements with links you invented. Do not delete elements that
+8. Do not add new elements with links you invented. Do not delete elements that
    contain a link unless their text becomes truly redundant.
 
 Return ONLY a JSON object in the format: {{"elements": [...]}}

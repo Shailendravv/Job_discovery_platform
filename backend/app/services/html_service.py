@@ -190,11 +190,29 @@ def _playwright_pdf(html_content: str) -> bytes:
 
 def validate_html(html: str) -> str:
     """Validate and sanitize HTML using BeautifulSoup.
-    Ensures well-formed HTML after LLM editing."""
-    if not HAS_BS4 or not html.strip():
+    Ensures well-formed HTML after LLM editing.
+
+    Defensively strips ```html ... ``` code fences first,
+    since many local models ignore the "no markdown" instruction.
+    """
+    import re
+
+    raw = html.strip()
+    if not raw:
         return html
 
-    soup = BeautifulSoup(html, "html.parser")
+    # Strip ```html ... ``` or ``` ... ``` fences unconditionally.
+    # Running these regexes on non-fenced content is a no-op (no match -> no replacement),
+    # so we don't need a startswith guard — this also catches fences that are
+    # preceded by commentary (e.g. "Here is the tailored section:\n```html\n...").
+    raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+    raw = re.sub(r"\n?```$", "", raw)
+    raw = raw.strip()
+
+    if not HAS_BS4:
+        return raw
+
+    soup = BeautifulSoup(raw, "html.parser")
 
     # Remove any script or style that might have been injected
     for tag in soup.find_all(["script", "style"]):
