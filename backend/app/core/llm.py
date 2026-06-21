@@ -18,7 +18,7 @@ def _get_groq_client() -> Groq:
     return _client_cache["groq"]
 
 
-def call_llm(prompt: str, json_format: bool = False, timeout: int = 120, provider: str | None = None) -> str:
+def call_llm(prompt: str, json_format: bool = False, timeout: int = 120, provider: str | None = None, max_tokens: int = 4096) -> str:
     """
     Call the configured LLM provider.
     Supports: ollama (default), groq.
@@ -29,7 +29,7 @@ def call_llm(prompt: str, json_format: bool = False, timeout: int = 120, provide
     if active_provider == "ollama":
         return _call_ollama(prompt, json_format, timeout)
     elif active_provider == "groq":
-        return _call_groq(prompt, json_format, timeout)
+        return _call_groq(prompt, json_format, timeout, max_tokens)
     elif active_provider == "gemini":
         raise NotImplementedError("Gemini provider not fully implemented yet")
     else:
@@ -79,7 +79,7 @@ def _call_ollama(prompt: str, json_format: bool, timeout: int) -> str:
     return result.get("content", "")
 
 
-def _call_groq(prompt: str, json_format: bool, timeout: int) -> str:
+def _call_groq(prompt: str, json_format: bool, timeout: int, max_tokens: int = 4096) -> str:
     """Call Groq's LLM API."""
     client = _get_groq_client()
 
@@ -90,7 +90,7 @@ def _call_groq(prompt: str, json_format: bool, timeout: int) -> str:
         "model": model,
         "messages": messages,
         "temperature": settings.MODEL_TEMPERATURE,
-        "max_tokens": 4096,
+        "max_tokens": max_tokens,
         "timeout": timeout,
     }
 

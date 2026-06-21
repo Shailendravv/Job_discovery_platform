@@ -277,6 +277,218 @@ def _wrap_html(body_html: str, style: str = "") -> str:
 </html>"""
 
 
+# ═══════════════════════════════════════════════════════════════
+#  HTML Section Parsing (for section-by-section tailoring)
+# ═══════════════════════════════════════════════════════════════
+
+def _is_heading_like(element) -> bool:
+    """
+    Dynamically detect if an HTML element looks like a section heading.
+
+    Detects:
+    1. <h1>-<h4> tags (standard HTML headings)
+    2. <p> elements that are ALL-CAPS and short (< 60 chars)
+    3. <p> elements whose first child is <strong>/<b> and text is short (< 60 chars)
+    4. <p> elements that are short, bold-looking, don't end with period
+
+    This makes section parsing fully dynamic — works with any resume template.
+    """
+    tag_name = getattr(element, "name", None) or ""
+    if tag_name.lower() in ("h1", "h2", "h3", "h4"):
+        return True
+
+    if tag_name.lower() not in ("p", "div"):
+        return False
+
+    text = element.get_text(strip=True)
+    if not text or len(text) > 60:
+        return False
+
+    # ALL-CAPS short line — must also contain a recognized section word
+    # (filters out dates like "JANUARY 2020" or data lines like "PHONE 555-0100")
+    if text.isupper() and len(text) >= 3:
+        text_lower = text.lower()
+        common_section_words = _get_section_words()
+        for word in common_section_words:
+            if word in text_lower:
+                return True
+        return False
+
+    # Has <strong> or <b> as direct first non-whitespace child
+    first_child = None
+    for child in element.children:
+        if hasattr(child, "name") and child.name in ("strong", "b"):
+            return True
+        if child.string and child.string.strip():
+            break
+        break
+
+    # Short line that starts with common resume section words
+    common_section_words = _get_section_words()
+    if len(text) < 40 and not text.endswith("."):
+        text_lower = text.lower()
+        for word in common_section_words:
+            if (text_lower == word or text_lower.startswith(word)) and text_lower[:3].isalpha():
+                return True
+
+    return False
+
+
+# Shared section word list (used by both HTML and text parsers)
+_COMMON_SECTION_WORDS = [
+    "summary", "profile", "objective",
+    "experience", "employment", "history", "work",
+    "education", "academic",
+    "skill", "technolog", "competenc", "expertise",
+    "project", "certification", "publication",
+    "award", "honor", "language", "interest",
+    "reference", "volunteer", "leadership",
+    "professional", "qualification", "training",
+    "affiliation", "activity", "internship",
+    "research", "achievement", "background",
+    "core", "additional", "development",
+]
+
+
+def _get_section_words() -> list[str]:
+    """Get the list of recognized section heading words."""
+    return _COMMON_SECTION_WORDS
+
+
+def parse_html_into_sections(full_html: str) -> list[dict]:
+    """
+    Parse the full resume HTML into sections split by heading-like elements.
+    Dynamically detects ANY heading-like element:
+    - <h1>-<h4> tags
+    - <p><strong>HEADING</strong></p>
+    - ALL-CAPS short paragraphs
+    - Bold short paragraphs
+
+    Returns a list of dicts:
+        {
+            "type": str,               # Dynamically classified section type
+            "editable": True,           # Always True — LLM decides what to rewrite
+            "html": str,               # Section's HTML wrapped with CSS
+            "body_html": str,          # Just the body content (no html/head/style wrapper)
+            "section_name": str,       # Section heading text normalized
+        }
+
+    All sections are editable. The LLM prompt instructs it not to change
+    names, job titles, company names, dates, or factual information.
+    """
+    if not HAS_BS4:
+        return [{
+            "type": "unknown",
+            "editable": True,
+            "html": full_html,
+            "body_html": _extract_body_html(full_html),
+            "section_name": "full_resume",
+        }]
+
+    soup = BeautifulSoup(full_html, "html.parser")
+    body = soup.find("body")
+    if not body:
+        return [{
+            "type": "unknown",
+            "editable": True,
+            "html": full_html,
+            "body_html": full_html,
+            "section_name": "full_resume",
+        }]
+
+    # Extract style from head for re-wrapping
+    head_style = _DEFAULT_CSS
+    head = soup.find("head")
+    if head:
+        style_tag = head.find("style")
+        if style_tag and style_tag.string:
+            head_style = style_tag.string
+
+    sections = []
+    current_heading_text = ""
+    current_nodes: list = []
+
+    for child in body.children:
+        if not getattr(child, "name", None):
+            # Text node or NavigableString — append to current section
+            current_nodes.append(child)
+            continue
+
+        if _is_heading_like(child):
+            # Save previous section
+            if current_nodes:
+                sections.append({
+                    "type": _classify_section(current_heading_text),
+                    "editable": True,
+                    "body_html": _nodes_to_html(current_nodes),
+                    "html": _wrap_html(_nodes_to_html(current_nodes), style=head_style),
+                    "section_name": current_heading_text.lower().strip(),
+                })
+
+            # Start new section with this heading
+            current_heading_text = child.get_text(strip=True)
+            current_nodes = [child]
+        else:
+            current_nodes.append(child)
+
+    # Save the last section
+    if current_nodes:
+        sections.append({
+            "type": _classify_section(current_heading_text),
+            "editable": True,
+            "body_html": _nodes_to_html(current_nodes),
+            "html": _wrap_html(_nodes_to_html(current_nodes), style=head_style),
+            "section_name": current_heading_text.lower().strip(),
+        })
+
+    return sections
+
+
+def _nodes_to_html(nodes: list) -> str:
+    """Convert a list of BeautifulSoup nodes back to HTML string."""
+    return "".join(str(node) for node in nodes)
+
+
+def _classify_section(heading_text: str) -> str:
+    """
+    Dynamically classify a section based on its heading text.
+    Returns a readable type string for logging/debugging.
+    """
+    text = heading_text.lower().strip()
+
+    if not text:
+        return "preamble"
+    if "summary" in text or "profile" in text or "objective" in text:
+        return "summary"
+    if "experience" in text or "employment" in text or "history" in text:
+        return "experience"
+    if "skill" in text or "technolog" in text or "competenc" in text:
+        return "skills"
+    if "education" in text or "academic" in text:
+        return "education"
+    if "project" in text:
+        return "projects"
+    if "certification" in text or "license" in text:
+        return "certifications"
+    if "publication" in text or "award" in text or "honor" in text:
+        return "publications"
+    if "language" in text:
+        return "languages"
+    if "volunteer" in text:
+        return "volunteer"
+    return "other"
+
+
+def reassemble_html(sections: list[dict]) -> str:
+    """
+    Reassemble the full HTML document from tailored sections.
+    Each section's body_html is concatenated and wrapped.
+    """
+    body_parts = [s["body_html"] for s in sections]
+    body_html = "\n".join(body_parts)
+    return _wrap_html(body_html, style=_DEFAULT_CSS)
+
+
 def _xml_escape(text: str) -> str:
     """Escape XML special characters."""
     text = text.replace("&", "&amp;")
