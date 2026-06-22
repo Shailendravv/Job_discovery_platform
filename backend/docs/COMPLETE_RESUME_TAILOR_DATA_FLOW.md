@@ -324,7 +324,16 @@ Client sends { resume_id, job_id }
 ┌──────────────────────────────────────────────┐
 │  2. Extract PII — NEVER sent to LLM          │
 │                                              │
-│     pii.py → extract_pii(parsed_data)        │
+│     pii.py → extract_pii(                    │
+│       parsed_data,                           │
+│       resume_text,        ← fallback source  │
+│     )                                        │
+│                                              │
+│     Falls back to regex extraction from      │
+│     raw text when LLM parser missed PII.     │
+│     Email: regex                             │
+│     Phone: regex                             │
+│     Name: first 2-4 word capitalized line    │
 │                                              │
 │     pii = {                                   │
 │       "name":  "John Doe",           ← SAVED │
@@ -335,29 +344,34 @@ Client sends { resume_id, job_id }
                    │
                    ▼
 ┌──────────────────────────────────────────────┐
-│  3. Build resume JSON for LLM (NO PII)       │
+│  3. Split editable vs preserved sections     │
 │                                              │
-│     structured_tailor.py → _build_resume_    │
-│     input_json(parsed_data, resume_text)     │
+│     structured_tailor.py → _build_editable_  │
+│     and_preserved(parsed_data, resume_text)  │
 │                                              │
-│     resume_json = {                          │
-│       "summary":        "Experienced dev...",│
-│       "skills":         ["Python","React"],  │
-│       "experience":     [{company, title,    │
-│                           duration, desc}],  │
-│       "projects":       [{name, desc}],      │
+│     EDITABLE → sent to LLM:                  │
+│     {                                        │
+│       "summary":      "Experienced dev...",  │
+│       "skills":       ["Python","React"],    │
+│       "experience":   [{company, title,      │
+│                         duration, desc}],    │
+│       "projects":     [{name, desc}]         │
+│     }                                        │
+│                                              │
+│     PRESERVED → kept server-side:            │
+│     {                                        │
 │       "education":      [{institution,       │
 │                           degree, year}],    │
 │       "certifications": ["AWS Certified"]    │
 │     }                                        │
 │                                              │
-│     ↳ Summary extracted from:               │
-│         parsed_data.summary OR heuristics    │
-│       ↳ Projects extracted from:            │
-│         parsed_data.projects OR heuristics   │
+│     ↳ Each section has fallback extraction   │
+│       from raw text when parsed_data is      │
+│       empty (education, skills, experience,  │
+│       projects, summary all have fallbacks)  │
 │                                              │
-│     PII FIELDS (name, email, phone)          │
-│     ARE EXCLUDED from this payload           │
+│     PII + preserved sections are NEVER       │
+│     included in the LLM payload              │
 └──────────────────┬───────────────────────────┘
                    │
                    ▼
@@ -448,15 +462,20 @@ Client sends { resume_id, job_id }
                    │
                    ▼
 ┌──────────────────────────────────────────────┐
-│  7. Re-inject PII                            │
+│  7. Re-inject Preserved + PII                │
+│                                              │
+│     preserved dict (education + certs)       │
+│     merged back via:                         │
+│       full_data.update(preserved)            │
 │                                              │
 │     pii_service.py → reinject_pii(           │
-│       tailored_output,                       │
-│       pii                                    │
+│       full_data, pii                         │
 │     )                                        │
 │                                              │
 │     full_data = {                            │
-│       ...tailored_output,         ← no PII   │
+│       ...tailored_output,         ← editable │
+│       "education":      [...],    ← BACK     │
+│       "certifications": [...],   ← BACK     │
 │       "name":  "John Doe",        ← BACK     │
 │       "email": "john@email.com",  ← BACK     │
 │       "phone": "+1-555-0100"      ← BACK     │
@@ -544,14 +563,19 @@ Client sends { resume_id, job_id }
 │                      │     │  skills               │────▶│  skills              │
 │  experience  ────────┤────▶│  experience           │────▶│  experience          │
 │                      │     │  projects             │────▶│  projects            │
-│  education   ────────┤────▶│  education            │────▶│  education           │
-│  languages   ────────┤     │  certifications       │────▶│  certifications      │
-│  certifications ─────┤     │                      │     │                      │
+│  education   ────────┤     │                      │     │                      │
+│  certifications ─────┤     │  (NOT sent to LLM ───┤     │                      │
+│  languages   ────────┤     │   preserved server-  │     │                      │
+│                      │     │   side)              │     │                      │
 │                      │     │                      │     │  ats_keywords_       │
 │  summary (optional)  │     │                      │     │  matched             │
 │  projects (optional) │     │                      │     │  ats_keywords_       │
 │                      │     │                      │     │  missing             │
 │                      │     │                      │     │  optimization_notes  │
+│                      │     │                      │     │                      │
+│                      │     │                      │     │  ← reinject          │
+│                      │     │                      │     │  preserved sections: │
+│                      │     │                      │     │  education, certs    │
 │                      │     │                      │     │                      │
 │                      │     │                      │     │  ← reinject PII:     │
 │                      │     │                      │     │  name, email, phone  │
@@ -587,7 +611,14 @@ These heuristics are logged at DEBUG level for monitoring accuracy.
 ### Three Functions
 
 ```
-extract_pii(parsed_data)
+extract_pii(parsed_data, resume_text="")
+    ↓
+  Primary: read from parsed_data
+    ↓
+  Fallback (when primary returns empty):
+    Email:  regex [a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+    Phone:  regex for common phone formats
+    Name:   first 2-4 word capitalized line (not a section heading)
     ↓
   { "name": "John Doe",
     "email": "john@email.com",
@@ -606,28 +637,60 @@ reinject_pii(tailored_data, pii)
   { "summary": "...",
     "skills": [...],
     "experience": [...],
-    "name": "John Doe",     ← BACK
-    "email": "john@email.com", ← BACK
-    "phone": "+1-555-0100"   ← BACK
+    "education": [...],
+    "certifications": [...],
+    "name": "John Doe",         ← BACK
+    "email": "john@email.com",   ← BACK
+    "phone": "+1-555-0100"       ← BACK
   }
 ```
 
+### Raw Text Fallback Extraction
+
+When the LLM parser (`resume_parser.py`) fails to extract PII fields from the
+resume — e.g., the name comes through as "Candidate" or email/phone are missing —
+the system falls back to regex/heuristic extraction directly from the raw text:
+
+| Field | Fallback Method |
+|-------|----------------|
+| `email` | Regex pattern matching standard email format |
+| `phone` | Regex matching `+1-555-0100`, `(555) 123-4567`, etc. |
+| `name` | First non-heading, 2-4 word line with capitalized words in first 10 lines |
+
+This ensures PII is captured even when the LLM-based parser produces poor output.
+
 ### Security Guarantee
 
-The `_build_resume_input_json()` function in `structured_tailor.py` only maps specific non-PII keys:
+The `_build_editable_and_preserved()` function in `structured_tailor.py` splits
+the data into two dicts:
+
+| Dict | Keys | Destination |
+|------|------|-------------|
+| `editable` | summary, skills, experience, projects | **Sent to LLM** |
+| `preserved` | education, certifications | **Kept server-side**, merged back after |
+
+Neither dict contains `name`, `email`, or `phone` — those are handled
+exclusively by `pii_service.py`.
 
 ```python
-return {
+# Only 4 editable keys go to the LLM:
+editable = {
     "summary": ...,
     "skills": ...,
     "experience": ...,
     "projects": ...,
+}
+
+# 2 preserved keys never leave the server:
+preserved = {
     "education": ...,
     "certifications": ...,
 }
 ```
 
-Even if `parsed_data` contains extra fields, **only these 6 keys** go into the LLM payload. `name`, `email`, `phone` are never included.
+Even if `parsed_data` contains extra fields, **only these 4 editable keys** are
+sent to the LLM. `name`, `email`, `phone`, `education`, and `certifications`
+are never included.
 
 ---
 

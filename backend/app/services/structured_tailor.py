@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Optional
 
 from app.services.llm import get_llm_provider
@@ -327,6 +328,234 @@ def _extract_projects_from_text(resume_text: str) -> list[dict]:
     return projects
 
 
+# ── Known section headings used for boundary detection ──
+_KNOWN_HEADINGS = frozenset({
+    "summary", "professional summary", "profile", "objective", "career objective",
+    "skills", "technical skills", "core competencies", "key skills",
+    "experience", "work experience", "professional experience", "employment",
+    "education", "academic background", "qualifications",
+    "projects", "project", "personal projects", "professional projects",
+    "certifications", "certification", "certificates", "licenses",
+    "publications", "publication",
+    "languages", "language",
+    "references", "reference",
+    "interests", "interest", "activities",
+    "achievements", "awards", "honors",
+    "leadership", "volunteer", "additional",
+})
+_MAX_FALLBACK_LINES = 80  # hard cap: don't consume more than this per section
+
+
+def _is_heading_line(stripped: str) -> bool:
+    """Check if a line looks like a known section heading."""
+    lower = stripped.lower().rstrip(":").strip()
+    if lower in _KNOWN_HEADINGS:
+        return True
+    # Also handle "Technical Skills", "Core Competencies" etc.
+    for known in _KNOWN_HEADINGS:
+        if known in ("skills",) and lower.endswith("skills"):
+            return True
+        if known in ("certifications",) and lower.endswith("certifications"):
+            return True
+    return False
+
+
+def _parse_year(value: str) -> int | str:
+    """Try to parse a year value; return int if possible, else the string."""
+    if not value:
+        return ""
+    try:
+        return int(value.strip())
+    except ValueError:
+        return value.strip()
+
+
+def _extract_education_from_text(resume_text: str) -> list[dict]:
+    """Extract education entries from raw text (heuristic fallback)."""
+    lines = resume_text.split("\n")
+    in_section = False
+    education: list[dict] = []
+    line_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if not in_section:
+            if _is_heading_line(stripped) and "education" in stripped.lower():
+                in_section = True
+            continue
+
+        # Inside education section — check for next heading
+        if _is_heading_line(stripped) and "education" not in stripped.lower():
+            break
+        line_count += 1
+        if line_count > _MAX_FALLBACK_LINES:
+            break
+
+        entry_text = stripped.lstrip("-•*").strip()
+        if not entry_text:
+            continue
+
+        institution = ""
+        degree_text = ""
+        year: int | str = ""
+
+        # Try comma-separated: "Degree, Institution, Year" or "Institution, Degree, Year"
+        # Also try dash-separated: "Degree — Institution (Year)"
+        year_match = re.search(r"(\b\d{4}\b)", entry_text)
+        if year_match:
+            year = _parse_year(year_match.group(1))
+
+        # Remove year for parsing
+        text_no_year = re.sub(r"\(?\b\d{4}\b\)?\s*-?\s*", "", entry_text).strip().rstrip(",").strip()
+
+        # Try comma split
+        parts = [p.strip() for p in text_no_year.split(",") if p.strip()]
+        if len(parts) >= 2:
+            degree_text = parts[0]
+            institution = parts[-1]  # Last part is typically institution
+        else:
+            # Try dash split
+            for sep in (" — ", " – ", " - "):
+                if sep in text_no_year:
+                    dash_parts = [p.strip() for p in text_no_year.split(sep) if p.strip()]
+                    if len(dash_parts) >= 2:
+                        degree_text = dash_parts[0]
+                        institution = dash_parts[-1]
+                        break
+            else:
+                institution = text_no_year
+
+        if institution or degree_text:
+            education.append({
+                "institution": institution,
+                "degree": degree_text,
+                "year": year if isinstance(year, int) or year else 0,
+            })
+
+    if education:
+        log.debug("Extracted %d education entries via heuristic fallback", len(education))
+    else:
+        log.debug("No education section found in resume text")
+    return education
+
+
+def _extract_skills_from_text(resume_text: str) -> list[str]:
+    """Extract skills list from raw text (heuristic fallback)."""
+    lines = resume_text.split("\n")
+    in_section = False
+    skills: list[str] = []
+    line_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if not in_section:
+            if _is_heading_line(stripped) and "skill" in stripped.lower():
+                in_section = True
+            continue
+
+        # Detect next section heading
+        if _is_heading_line(stripped) and "skill" not in stripped.lower():
+            break
+        line_count += 1
+        if line_count > _MAX_FALLBACK_LINES:
+            break
+
+        # Split on comma, semicolon, pipe, bullet
+        for s in re.split(r"[,;|•]+", stripped):
+            s = s.strip().lstrip("-*").strip()
+            if s and len(s) > 1:
+                skills.append(s)
+
+    if skills:
+        log.debug("Extracted %d skills via heuristic fallback", len(skills))
+    else:
+        log.debug("No skills section found in resume text")
+    return skills
+
+
+def _extract_experience_from_text(resume_text: str) -> list[dict]:
+    """Extract experience entries from raw text (heuristic fallback)."""
+    lines = resume_text.split("\n")
+    in_section = False
+    buffer: list[str] = []
+    experience: list[dict] = []
+    line_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if not in_section:
+            if _is_heading_line(stripped) and "experience" in stripped.lower():
+                in_section = True
+            continue
+
+        # Detect next section heading (but not "experience")
+        if _is_heading_line(stripped) and "experience" not in stripped.lower():
+            break
+        line_count += 1
+        if line_count > _MAX_FALLBACK_LINES:
+            break
+
+        buffer.append(stripped)
+
+    # Parse buffer into entries
+    current: dict | None = None
+    for line_text in buffer:
+        is_bullet = line_text and line_text[0] in ("-", "•", "*")
+
+        if not is_bullet:
+            if current is None:
+                current = {"company": "", "title": "", "duration": "", "description": ""}
+                if line_text.lower().startswith("at ") or " at " in line_text.lower():
+                    if line_text.lower().startswith("at "):
+                        current["company"] = line_text[3:].strip()
+                    else:
+                        # "Title at Company" or "Title - Company"
+                        idx = line_text.lower().index(" at ")
+                        current["title"] = line_text[:idx].strip()
+                        current["company"] = line_text[idx + 4:].strip()
+                else:
+                    current["company"] = line_text
+            elif current and current.get("description"):
+                experience.append(current)
+                current = {"company": line_text, "title": "", "duration": "", "description": ""}
+            elif current:
+                # Could be a duration/date line
+                if re.search(r"\d{4}\s*[-–to]+\s*(present|current|\d{4})", line_text, re.IGNORECASE):
+                    current["duration"] = line_text.strip()
+                elif current["title"]:
+                    # Extend company name
+                    current["company"] += " " + line_text
+                else:
+                    # Treat as title line
+                    current["title"] = line_text
+        else:
+            if current is None:
+                current = {"company": "", "title": "", "duration": "", "description": ""}
+            bullet = line_text.lstrip("-•*").strip()
+            if current["description"]:
+                current["description"] += "\n" + bullet
+            else:
+                current["description"] = bullet
+
+    if current:
+        experience.append(current)
+
+    if experience:
+        log.debug("Extracted %d experience entries via heuristic fallback", len(experience))
+    else:
+        log.debug("No experience section found in resume text")
+    return experience
+
+
 def _build_editable_and_preserved(parsed_data: dict, resume_text: str) -> tuple[dict, dict]:
     """
     Build TWO JSON dicts:
@@ -350,14 +579,18 @@ def _build_editable_and_preserved(parsed_data: dict, resume_text: str) -> tuple[
         summary = _extract_summary_from_text(resume_text)
 
     # ── Experience ──
-    experience = []
-    for exp in parsed_data.get("experience", []):
-        experience.append({
-            "company": exp.get("company", ""),
-            "title": exp.get("title", ""),
-            "duration": exp.get("duration", ""),
-            "description": exp.get("description", ""),
-        })
+    raw_experience = parsed_data.get("experience", [])
+    if raw_experience and isinstance(raw_experience, list):
+        experience = []
+        for exp in raw_experience:
+            experience.append({
+                "company": exp.get("company", ""),
+                "title": exp.get("title", ""),
+                "duration": exp.get("duration", ""),
+                "description": exp.get("description", ""),
+            })
+    else:
+        experience = _extract_experience_from_text(resume_text)
 
     # ── Projects ──
     projects = parsed_data.get("projects", [])
@@ -365,16 +598,24 @@ def _build_editable_and_preserved(parsed_data: dict, resume_text: str) -> tuple[
         projects = _extract_projects_from_text(resume_text)
 
     # ── Skills ──
-    skills = parsed_data.get("skills", [])
+    raw_skills = parsed_data.get("skills", [])
+    if raw_skills and isinstance(raw_skills, list):
+        skills = raw_skills
+    else:
+        skills = _extract_skills_from_text(resume_text)
 
     # ── Preserved (factual — never sent to LLM) ──
-    education = []
-    for edu in parsed_data.get("education", []):
-        education.append({
-            "institution": edu.get("institution", ""),
-            "degree": edu.get("degree", ""),
-            "year": edu.get("year", 0),
-        })
+    raw_education = parsed_data.get("education", [])
+    if raw_education and isinstance(raw_education, list):
+        education = []
+        for edu in raw_education:
+            education.append({
+                "institution": edu.get("institution", ""),
+                "degree": edu.get("degree", ""),
+                "year": edu.get("year", 0),
+            })
+    else:
+        education = _extract_education_from_text(resume_text)
 
     certifications = parsed_data.get("certifications", [])
 
@@ -904,7 +1145,7 @@ async def tailor_resume_structured(
     job_skills = job.get("skills", [])
 
     # ── Step 1: Extract PII ──
-    pii = extract_pii(parsed_data)
+    pii = extract_pii(parsed_data, resume_text=resume_text)
     log.info(
         "Structured tailor: extracted PII — name=%s email=%s phone=%s",
         pii.get("name", "N/A"), pii.get("email", "N/A"), pii.get("phone", "N/A"),
