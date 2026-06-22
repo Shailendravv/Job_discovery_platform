@@ -4,7 +4,7 @@ Uses Groq to write a professional cover letter based on resume and job descripti
 """
 
 import logging
-from app.core.llm import call_llm
+from app.core.llm import call_llm_async
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ async def generate_cover_letter(
     )
 
     try:
-        letter = call_llm(prompt, json_format=False)
+        letter = await call_llm_async(prompt, json_format=False)
         return letter.strip()
     except Exception as e:
         log.error("Cover letter generation failed: %s", e, exc_info=True)

@@ -12,6 +12,11 @@ from app.models.resume import (
     ParsedResumeData,
     DownloadUrls,
     DownloadFromUrlRequest,
+    StructuredTailorRequest,
+    StructuredTailorResponse,
+    StructuredTailorErrorResponse,
+    StructuredTailorDownloadUrls,
+    TailoredResumeData,
 )
 from app.api.deps import get_db
 from app.services.PDF_service import extract_text_from_pdf, generate_pdf
@@ -24,7 +29,7 @@ from app.services.cloudinary_service import (
     parse_cloudinary_url,
 )
 from app.services.resume_parser import parse_resume_text
-from app.services.resume_tailor import tailor_resume_text, tailor_resume_html
+from app.services.structured_tailor import tailor_resume_structured as run_structured_tailor
 from app.services.cover_letter import generate_cover_letter
 from app.services.db_service import save_resume, get_resume_by_id, save_tailor_session
 
@@ -160,6 +165,13 @@ async def upload_resume(file: UploadFile = File(...), db: AsyncIOMotorDatabase =
 async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
     """
     Tailor a resume to a specific job description and generate a cover letter.
+
+    Uses the structured JSON pipeline (NOT section-by-section):
+      1. Take parsed_data as JSON + JD as JSON
+      2. Strip PII, education, certifications (factual data preserved)
+      3. If data is large: split into 2-3 chunks, call LLM per chunk
+      4. Reassemble into final JSON → generate HTML → DOCX → PDF
+
     Accepts resume_id and job_id (MongoDB ObjectIds).
     Returns tailored text + cover letter + Cloudinary download URLs.
     """
@@ -175,56 +187,60 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
         raise HTTPException(status_code=404, detail=f"Job not found: {request.job_id}")
 
     resume_text = resume.get("extracted_text", "")
-    resume_html = resume.get("resume_html", "")
-    parsed = resume.get("parsed_data", {})
+    parsed_data = resume.get("parsed_data", {})
 
-    # ── Tailor resume (HTML round-trip) ──
-    if resume_html:
-        # New resume with HTML — use the HTML tailoring path
-        try:
-            tailored_html = await tailor_resume_html(resume_html, job)
-            tailored_text = ""  # extracted from HTML below if needed
-        except Exception as e:
-            log.error("HTML resume tailoring failed: %s", e, exc_info=True)
-            return ResumeTailorErrorResponse(
-                resume_id=request.resume_id,
-                job_id=request.job_id,
-                error=f"Resume tailoring failed: {str(e)}",
-                tailored_text=resume_text,
-            )
-    else:
-        # Legacy resume without HTML — fall back to plain text tailoring
-        try:
-            tailored_text = await tailor_resume_text(resume_text, job)
-            tailored_html = plain_text_to_html(tailored_text)
-        except Exception as e:
-            log.error("Resume tailoring failed: %s", e, exc_info=True)
-            return ResumeTailorErrorResponse(
-                resume_id=request.resume_id,
-                job_id=request.job_id,
-                error=f"Resume tailoring failed: {str(e)}",
-                tailored_text=resume_text,
-            )
+    if not resume_text:
+        return ResumeTailorErrorResponse(
+            resume_id=request.resume_id,
+            job_id=request.job_id,
+            error="Resume has no extracted text",
+            tailored_text="",
+        )
 
-    # Extract plain text from HTML for response and cover letter context
+    # ── Use structured pipeline (1-3 LLM calls, not 20+) ──
+    try:
+        result = await run_structured_tailor(
+            resume_text=resume_text,
+            parsed_data=parsed_data,
+            job=job,
+        )
+    except Exception as e:
+        log.error("Structured tailoring failed: %s", e, exc_info=True)
+        return ResumeTailorErrorResponse(
+            resume_id=request.resume_id,
+            job_id=request.job_id,
+            error=f"Resume tailoring failed: {str(e)}",
+            tailored_text=resume_text[:1000],
+        )
+
+    tailored_html = result["tailored_html"]
+    pii = result["pii"]
+
+    # Extract plain text from HTML for response
     try:
         tailored_text = extract_text_from_html(tailored_html)
     except Exception:
-        pass
+        tailored_text = resume_text[:1000]
 
     # ── Generate cover letter ──
     try:
         cover_letter = await generate_cover_letter(
-            candidate_name=parsed.get("name") or "Applicant",
-            candidate_skills=parsed.get("skills", []),
-            candidate_experience=_format_experience(parsed.get("experience", [])),
+            candidate_name=pii.get("name") or "Applicant",
+            candidate_skills=parsed_data.get("skills", []),
+            candidate_experience=_format_experience(parsed_data.get("experience", [])),
             job_title=job.get("title", "Position"),
             company_name=job.get("company", "Company"),
             job_description=job.get("description", ""),
         )
     except Exception as e:
         log.error("Cover letter generation failed: %s", e, exc_info=True)
-        cover_letter = f"Dear Hiring Manager,\n\nI am writing to express my interest in the {job.get('title', 'position')} position at {job.get('company', 'your company')}.\n\nSincerely,\n{parsed.get('name') or 'Applicant'}"
+        cover_letter = (
+            f"Dear Hiring Manager,\n\n"
+            f"I am writing to express my interest in the "
+            f"{job.get('title', 'position')} position at "
+            f"{job.get('company', 'your company')}.\n\n"
+            f"Sincerely,\n{pii.get('name') or 'Applicant'}"
+        )
 
     # ── Generate downloadable files ──
     try:
@@ -234,26 +250,22 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
 
         session_id = uuid.uuid4().hex
 
-        # Upload tailored resume as PDF (resource_type="image" per Cloudinary docs)
         pdf_result = await upload_file(
             pdf_bytes,
-            public_id=f"tailored/{session_id}/resume_pdf",  # No .pdf extension!
+            public_id=f"tailored/{session_id}/resume_pdf",
             resource_type="image",
         )
-        # Upload tailored resume as DOCX (resource_type="raw" for non-PDF)
         docx_result = await upload_file(
             docx_bytes,
             public_id=f"tailored/{session_id}/resume_docx",
             resource_type="raw",
         )
-        # Upload cover letter as PDF (resource_type="image" per Cloudinary docs)
         cover_pdf_result = await upload_file(
             cover_pdf_bytes,
-            public_id=f"tailored/{session_id}/cover_letter",  # No .pdf extension!
+            public_id=f"tailored/{session_id}/cover_letter",
             resource_type="image",
         )
 
-        # Generate proper download URLs for Cloudinary delivery
         pdf_url = get_download_url(
             public_id=pdf_result["public_id"],
             resource_type="image",
@@ -276,11 +288,13 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
             cover_letter_pdf=cover_pdf_url,
         )
 
-        # Save tailor session (fire-and-forget style)
+        # Save tailor session
         try:
             await save_tailor_session(db, {
                 "resume_id": request.resume_id,
                 "job_id": request.job_id,
+                "tailoring_type": "structured",
+                "chunks_count": result.get("chunks_count", 1),
                 "original_text_preview": resume_text[:500],
                 "tailored_text": tailored_text,
                 "cover_letter": cover_letter,
@@ -293,12 +307,14 @@ async def tailor_resume(request: ResumeTailorRequest, db: AsyncIOMotorDatabase =
 
     except Exception as e:
         log.error("File generation/upload failed: %s", e, exc_info=True)
-        # Return text-only response without download URLs
-        download_urls = DownloadUrls(
-            pdf="",
-            docx="",
-            cover_letter_pdf="",
-        )
+        download_urls = DownloadUrls(pdf="", docx="", cover_letter_pdf="")
+
+    log.info(
+        "Tailor complete: %d chunk(s), %d ats matched, %d ats missing",
+        result.get("chunks_count", 1),
+        len(result.get("ats_keywords_matched", [])),
+        len(result.get("ats_keywords_missing", [])),
+    )
 
     return ResumeTailorResponse(
         resume_id=request.resume_id,
@@ -398,6 +414,236 @@ def _format_experience(experience: list) -> str:
             line += f": {desc}"
         parts.append(line)
     return "\n".join(parts)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Structured Tailoring Endpoint (PII-safe, OpenRouter)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.post(
+    "/tailor-structured",
+    response_model=StructuredTailorResponse | StructuredTailorErrorResponse,
+)
+async def tailor_resume_structured(
+    request: StructuredTailorRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    """
+    Tailor a resume using the structured JSON pipeline with PII privacy protection.
+
+    Pipeline:
+        1. Retrieve parsed resume & job from MongoDB
+        2. Extract PII (name, email, phone) — NEVER sent to the LLM
+        3. Build structured resume JSON → send to OpenRouter with ATS system prompt
+        4. Parse tailored JSON response → re-inject PII
+        5. Generate HTML → DOCX → PDF → upload to Cloudinary
+        6. Return tailored data + download URLs + ATS metadata
+
+    This endpoint uses OpenRouter free-tier models with automatic fallback,
+    and strips all PII before sending any data to the external LLM.
+
+    Request body:
+        { "resume_id": "...", "job_id": "..." }
+    """
+    # ── Fetch resume ──
+    resume = await get_resume_by_id(db, request.resume_id)
+    if not resume:
+        raise HTTPException(
+            status_code=404, detail=f"Resume not found: {request.resume_id}"
+        )
+
+    # ── Fetch job ──
+    from app.services.db_service import get_job_by_id
+
+    job = await get_job_by_id(db, request.job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404, detail=f"Job not found: {request.job_id}"
+        )
+
+    resume_text = resume.get("extracted_text", "")
+    parsed_data = resume.get("parsed_data", {})
+
+    if not resume_text:
+        return StructuredTailorErrorResponse(
+            resume_id=request.resume_id,
+            job_id=request.job_id,
+            error="Resume has no extracted text",
+        )
+
+    # ── Run the structured tailoring pipeline ──
+    try:
+        result = await run_structured_tailor(
+            resume_text=resume_text,
+            parsed_data=parsed_data,
+            job=job,
+        )
+    except Exception as e:
+        log.error(
+            "Structured tailoring pipeline failed: %s", e, exc_info=True
+        )
+        return StructuredTailorErrorResponse(
+            resume_id=request.resume_id,
+            job_id=request.job_id,
+            error=f"Structured tailoring failed: {str(e)}",
+            tailored_text=resume_text[:1000],
+        )
+
+    tailored_html = result["tailored_html"]
+    tailored_data = result["tailored_data"]
+    pii = result["pii"]
+    ats_matched = result["ats_keywords_matched"]
+    ats_missing = result["ats_keywords_missing"]
+    opt_notes = result["optimization_notes"]
+    llm_model = result["llm_model"]
+
+    # Extract plain text from HTML
+    try:
+        tailored_text = extract_text_from_html(tailored_html)
+    except Exception:
+        tailored_text = resume_text[:1000]
+
+    # ── Generate cover letter ──
+    try:
+        cover_letter = await generate_cover_letter(
+            candidate_name=pii.get("name") or "Applicant",
+            candidate_skills=parsed_data.get("skills", []),
+            candidate_experience=_format_experience(
+                parsed_data.get("experience", [])
+            ),
+            job_title=job.get("title", "Position"),
+            company_name=job.get("company", "Company"),
+            job_description=job.get("description", ""),
+        )
+    except Exception as e:
+        log.error(
+            "Cover letter generation failed: %s", e, exc_info=True
+        )
+        cover_letter = (
+            f"Dear Hiring Manager,\n\n"
+            f"I am writing to express my interest in the "
+            f"{job.get('title', 'position')} position at "
+            f"{job.get('company', 'your company')}.\n\n"
+            f"Sincerely,\n{pii.get('name') or 'Applicant'}"
+        )
+
+    # ── Generate downloadable files ──
+    download_urls = StructuredTailorDownloadUrls()
+    try:
+        docx_bytes = html_to_docx(tailored_html)
+        pdf_bytes = await html_to_pdf_async(tailored_html)
+        cover_pdf_bytes = generate_pdf(cover_letter)
+
+        session_id = uuid.uuid4().hex
+
+        # Upload tailored resume as PDF
+        pdf_result = await upload_file(
+            pdf_bytes,
+            public_id=f"tailored/{session_id}/structured_resume_pdf",
+            resource_type="image",
+        )
+        # Upload tailored resume as DOCX
+        docx_result = await upload_file(
+            docx_bytes,
+            public_id=f"tailored/{session_id}/structured_resume_docx",
+            resource_type="raw",
+        )
+        # Upload cover letter as PDF
+        cover_pdf_result = await upload_file(
+            cover_pdf_bytes,
+            public_id=f"tailored/{session_id}/structured_cover_letter",
+            resource_type="image",
+        )
+
+        pdf_url = get_download_url(
+            public_id=pdf_result["public_id"],
+            resource_type="image",
+            file_format="pdf",
+        )
+        docx_url = get_download_url(
+            public_id=docx_result["public_id"],
+            resource_type="raw",
+            file_format=None,
+        )
+        cover_pdf_url = get_download_url(
+            public_id=cover_pdf_result["public_id"],
+            resource_type="image",
+            file_format="pdf",
+        )
+
+        download_urls = StructuredTailorDownloadUrls(
+            pdf=pdf_url,
+            docx=docx_url,
+            cover_letter_pdf=cover_pdf_url,
+        )
+
+        # Save tailor session
+        try:
+            await save_tailor_session(db, {
+                "resume_id": request.resume_id,
+                "job_id": request.job_id,
+                "tailoring_type": "structured",
+                "llm_model": llm_model,
+                "original_text_preview": resume_text[:500],
+                "tailored_text": tailored_text,
+                "cover_letter": cover_letter,
+                "cloudinary_pdf_url": pdf_url,
+                "cloudinary_docx_url": docx_url,
+                "cloudinary_cover_letter_url": cover_pdf_url,
+                "ats_keywords_matched": ats_matched,
+                "ats_keywords_missing": ats_missing,
+                "optimization_notes": opt_notes,
+            })
+        except Exception as e:
+            log.warning(
+                "Failed to save structured tailor session: %s", e
+            )
+
+    except Exception as e:
+        log.error(
+            "File generation/upload for structured tailor failed: %s",
+            e,
+            exc_info=True,
+        )
+
+    # ── Build tailored data model ──
+    tailored_data_model = TailoredResumeData(
+        summary=tailored_data.get("summary", ""),
+        skills=tailored_data.get("skills", []),
+        experience=[
+            {
+                "company": exp.get("company", ""),
+                "title": exp.get("title", ""),
+                "duration": exp.get("duration", ""),
+                "description": exp.get("description", ""),
+            }
+            for exp in tailored_data.get("experience", [])
+        ],
+        projects=tailored_data.get("projects", []),
+        education=[
+            {
+                "institution": edu.get("institution", ""),
+                "degree": edu.get("degree", ""),
+                "year": edu.get("year", 0),
+            }
+            for edu in tailored_data.get("education", [])
+        ],
+        certifications=tailored_data.get("certifications", []),
+    )
+
+    return StructuredTailorResponse(
+        resume_id=request.resume_id,
+        job_id=request.job_id,
+        tailored_data=tailored_data_model,
+        tailored_text=tailored_text,
+        cover_letter=cover_letter,
+        download_urls=download_urls,
+        ats_keywords_matched=ats_matched,
+        ats_keywords_missing=ats_missing,
+        optimization_notes=opt_notes,
+        llm_model=llm_model,
+    )
 
 
 @router.post("/download-from-url")

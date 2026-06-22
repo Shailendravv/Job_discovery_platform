@@ -48,11 +48,29 @@ async def startup():
     else:
         log.warning("  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)")
 
-    # Log Groq status
+    # Log LLM Provider Config
+    log.info("=== LLM Provider Config ===")
+    provider = settings.LLM_PROVIDER.lower().strip()
+    log.info("  LLM_PROVIDER               : %s", provider)
+    if provider == "ollama":
+        base_url = settings.OLLAMA_BASE_URL or settings.Ollama
+        model = settings.OLLAMA_MODEL or settings.MODEL_NAME
+        log.info("  OLLAMA_BASE_URL            : %s", base_url)
+        log.info("  OLLAMA_MODEL               : %s", model)
+    elif provider == "openrouter":
+        if settings.OPENROUTER_API_KEY:
+            log.info("  OPENROUTER                 : configured")
+        else:
+            log.warning("  OPENROUTER_API_KEY        : not configured")
+        model = settings.OPENROUTER_MODEL or "qwen/qwen3-coder:free"
+        log.info("  OPENROUTER_MODEL           : %s", model)
+        log.info("  OPENROUTER_FALLBACK_CHAIN  : 12 models configured")
+    log.info("  MODEL_TEMPERATURE          : %s", settings.MODEL_TEMPERATURE)
+    log.info("============================")
+
+    # Log legacy Groq status (for reference)
     if settings.GROQ_API_KEY:
-        log.info("  GROQ                        : configured (model=%s)", settings.GROQ_MODEL_NAME)
-    else:
-        log.warning("  GROQ                        : not configured (set GROQ_API_KEY env var)")
+        log.info("  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL_NAME)
 
     log.info("=== Search Provider Config ===")
     log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -9,10 +9,28 @@ class Settings(BaseSettings):
     CAMOFOX_URL: str
     MCP_SEARCH_URL: str = "http://localhost:8001"
     MCP_BROWSE_URL: str = "http://localhost:8002"
-    Ollama: str = "http://localhost:11434"
-    LLM_PROVIDER: str = "ollama"  # e.g., 'ollama', 'groq', 'gemini'
-    GROQ_API_KEY: str | None = None
-    GEMINI_API_KEY: str | None = None
+
+    # ── LLM Provider Configuration ───────────────────────────────────────
+    LLM_PROVIDER: str = "ollama"  # 'ollama' or 'openrouter'
+    MODEL_NAME: str = "qwen2.5-coder:1.5b"
+    MODEL_TEMPERATURE: float = 0.1
+
+    # Ollama
+    Ollama: str = "http://localhost:11434"  # legacy compat, use OLLAMA_BASE_URL
+    OLLAMA_BASE_URL: Optional[str] = None  # overrides Ollama if set
+    OLLAMA_MODEL: Optional[str] = None     # overrides MODEL_NAME for Ollama
+
+    # OpenRouter
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    OPENROUTER_MODEL: Optional[str] = None  # preferred model, with fallback chain
+
+    # Legacy Groq / Gemini (kept for compat, not used by new providers)
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
+    GEMINI_API_KEY: Optional[str] = None
+
+    # ── Search Configuration ─────────────────────────────────────────────
     SEARCH_MAX_RESULTS: int = 15
     BROWSE_TOP_N: int = 30
     LINKEDIN_MAX_RESULTS: int = 15
@@ -21,16 +39,11 @@ class Settings(BaseSettings):
     SEARCH_CAREERS: bool = False
     SETTLE_SECONDS: float = 1.5
     MAX_SNAPSHOT_CHARS: int = 12000
-    MODEL_NAME: str = "qwen2.5-coder:1.5b"
-    MODEL_TEMPERATURE: float = 0.1
 
     # Cloudinary Configuration
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
-
-    # Groq LLM Configuration
-    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
 
     # SearXNG toggle
     SEARXNG_ENABLED: bool = False  # Set to True to enable SearXNG search results

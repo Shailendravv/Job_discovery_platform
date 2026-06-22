@@ -15,7 +15,7 @@ import logging
 import os
 import tempfile
 
-from app.core.llm import call_llm
+from app.core.llm import call_llm_async
 from app.models.resume_elements import ResumeElement
 from app.services.html_service import (
     parse_html_into_sections,
@@ -303,7 +303,7 @@ async def tailor_resume_html(resume_html: str, job: dict) -> str:
         )
 
         try:
-            tailored = call_llm(prompt, json_format=False, max_tokens=4096)
+            tailored = await call_llm_async(prompt, json_format=False, max_tokens=4096)
 
             # Debug: log raw LLM output to diagnose JD content bleed issues
             log.debug("Raw LLM output for section '%s': %r", section_type, tailored[:300])
@@ -385,7 +385,7 @@ async def _fallback_html_tailor(resume_html: str, job: dict) -> str:
     )
 
     try:
-        tailored = call_llm(prompt, json_format=False, max_tokens=4096)
+        tailored = await call_llm_async(prompt, json_format=False, max_tokens=4096)
         return validate_html(tailored.strip())
     except Exception as e:
         log.error("Fallback HTML tailoring failed: %s", e)
@@ -458,7 +458,7 @@ async def tailor_resume_text(resume_text: str, job: dict) -> str:
         )
 
         try:
-            tailored = call_llm(prompt, json_format=False, max_tokens=4096)
+            tailored = await call_llm_async(prompt, json_format=False, max_tokens=4096)
             tailored = tailored.strip()
 
             # Debug: log raw LLM output to diagnose JD content bleed issues
@@ -565,7 +565,7 @@ async def tailor_resume_structured(
     )
 
     try:
-        raw = call_llm(prompt, json_format=True, max_tokens=4096)
+        raw = await call_llm_async(prompt, json_format=True, max_tokens=4096)
         parsed = json.loads(raw) if isinstance(raw, str) else raw
         if isinstance(parsed, dict) and "elements" in parsed:
             raw_elements = parsed["elements"]

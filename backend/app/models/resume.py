@@ -65,6 +65,59 @@ class ResumeTailorErrorResponse(BaseModel):
     cover_letter: Optional[str] = None
 
 
+# ── Structured Tailor Models (new pipeline with PII stripping) ──
+
+class ProjectEntry(BaseModel):
+    """A project entry for the structured resume."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class TailoredResumeData(BaseModel):
+    """The tailored resume output schema matching the ATS system prompt."""
+    summary: str = ""
+    skills: List[str] = Field(default_factory=list)
+    experience: List[ExperienceEntry] = Field(default_factory=list)
+    projects: List[ProjectEntry] = Field(default_factory=list)
+    education: List[EducationEntry] = Field(default_factory=list)
+    certifications: List[str] = Field(default_factory=list)
+
+
+class StructuredTailorRequest(BaseModel):
+    resume_id: str = Field(..., description="MongoDB ObjectId of the resume")
+    job_id: str = Field(..., description="MongoDB ObjectId of the job")
+
+
+class StructuredTailorDownloadUrls(BaseModel):
+    pdf: str = ""
+    docx: str = ""
+    cover_letter_pdf: Optional[str] = None
+
+
+class StructuredTailorResponse(BaseModel):
+    resume_id: str
+    job_id: str
+    tailored_data: TailoredResumeData
+    tailored_text: str
+    cover_letter: str
+    download_urls: StructuredTailorDownloadUrls
+    ats_keywords_matched: List[str] = Field(default_factory=list)
+    ats_keywords_missing: List[str] = Field(default_factory=list)
+    optimization_notes: List[str] = Field(default_factory=list)
+    llm_model: str = ""
+
+
+class StructuredTailorErrorResponse(BaseModel):
+    resume_id: Optional[str] = None
+    job_id: Optional[str] = None
+    error: str
+    tailored_text: Optional[str] = None
+    cover_letter: Optional[str] = None
+    ats_keywords_matched: List[str] = Field(default_factory=list)
+    ats_keywords_missing: List[str] = Field(default_factory=list)
+    optimization_notes: List[str] = Field(default_factory=list)
+
+
 # ── Download from URL Models ──
 
 class DownloadFromUrlRequest(BaseModel):

@@ -6,7 +6,7 @@ Uses Groq to extract structured data from resume text.
 import json
 import re
 import logging
-from app.core.llm import call_llm
+from app.core.llm import call_llm_async
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ async def parse_resume_text(extracted_text: str) -> dict:
     )  # Truncate to avoid token limits
 
     try:
-        raw_response = call_llm(prompt, json_format=True)
+        raw_response = await call_llm_async(prompt, json_format=True)
 
         # Clean response: strip markdown code blocks
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw_response).strip()
