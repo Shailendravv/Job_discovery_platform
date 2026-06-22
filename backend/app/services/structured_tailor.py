@@ -117,15 +117,27 @@ You may:
 * Add relevant keywords
 * Improve ATS matching
 
+IMPORTANT: Preserve the original summary's length, detail, and context.
+Do NOT shorten it. Maintain all specifics about years of experience,
+technologies, domain expertise, and key achievements.
+
 ---
 
 ### Skills Section
 
 You may:
 
-* Reorder skills
-* Group skills
+* Group skills by category
+* Reorder skills, putting JD-matching skills first within each group
 * Prioritize skills matching the JD
+
+IMPORTANT: Output ALL skills in this exact grouped order within the skills array:
+  - Frontend (React.js, Next.js, HTML, CSS, Tailwind, Material UI, etc.)
+  - Backend (Node.js, Express.js, FastAPI, Python, REST APIs, etc.)
+  - AI/ML/GenAI (OpenAI API, Claude API, LangChain, RAG, Prompt Engineering, etc.)
+  - Cloud & DevOps (AWS, GCP, Azure, Docker, CI/CD, etc.)
+  - Databases (MongoDB, PostgreSQL, etc.)
+  - Tools & Others (Git, Agile, Cross-Functional Collaboration, etc.)
 
 You may only include skills already present in the resume.
 
