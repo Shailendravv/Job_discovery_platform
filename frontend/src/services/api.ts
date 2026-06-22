@@ -1,5 +1,14 @@
 import { env } from "@/config/env";
-import type { JobFilterParams, JobListResponse, JobDetail, JobSearchRequest, JobSearchResponse, ResumeUploadResponse, ResumeTailorRequest, ResumeTailorResponse } from "@/types";
+import type {
+  JobFilterParams,
+  JobListResponse,
+  JobDetail,
+  JobSearchRequest,
+  JobSearchResponse,
+  ResumeUploadResponse,
+  ResumeTailorRequest,
+  ResumeTailorResponse,
+} from "@/types";
 
 export class ApiError extends Error {
   status: number;
@@ -15,10 +24,12 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   // Trim any double slashes
-  const baseUrl = env.apiUrl.endsWith("/") ? env.apiUrl.slice(0, -1) : env.apiUrl;
+  const baseUrl = env.apiUrl.endsWith("/")
+    ? env.apiUrl.slice(0, -1)
+    : env.apiUrl;
   const targetPath = path.startsWith("/") ? path : `/${path}`;
   const url = `${baseUrl}${targetPath}`;
-  
+
   const defaultHeaders = {
     "Content-Type": "application/json",
   };
@@ -39,9 +50,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       errorInfo = null;
     }
     throw new ApiError(
-      errorInfo?.detail || response.statusText || "An error occurred while fetching data.",
+      errorInfo?.detail ||
+        response.statusText ||
+        "An error occurred while fetching data.",
       response.status,
-      errorInfo
+      errorInfo,
     );
   }
 
@@ -66,7 +79,9 @@ export const api = {
   },
 
   uploadResume: async (file: File): Promise<ResumeUploadResponse> => {
-    const baseUrl = env.apiUrl.endsWith("/") ? env.apiUrl.slice(0, -1) : env.apiUrl;
+    const baseUrl = env.apiUrl.endsWith("/")
+      ? env.apiUrl.slice(0, -1)
+      : env.apiUrl;
     const formData = new FormData();
     formData.append("file", file);
 
@@ -86,28 +101,37 @@ export const api = {
       throw new ApiError(
         errorInfo?.detail || response.statusText || "Failed to upload resume.",
         response.status,
-        errorInfo
+        errorInfo,
       );
     }
 
     return response.json() as Promise<ResumeUploadResponse>;
   },
 
-  tailorResume: async (params: ResumeTailorRequest): Promise<ResumeTailorResponse> => {
-    return request<ResumeTailorResponse>("/api/v1/resumes/tailor", {
+  tailorResume: async (
+    params: ResumeTailorRequest,
+  ): Promise<ResumeTailorResponse> => {
+    return request<ResumeTailorResponse>("/api/v1/resumes/tailor-structured", {
       method: "POST",
       body: JSON.stringify(params),
     });
   },
 
-  downloadFromUrl: async (url: string): Promise<{ blob: Blob; filename: string }> => {
-    const baseUrl = env.apiUrl.endsWith("/") ? env.apiUrl.slice(0, -1) : env.apiUrl;
+  downloadFromUrl: async (
+    url: string,
+  ): Promise<{ blob: Blob; filename: string }> => {
+    const baseUrl = env.apiUrl.endsWith("/")
+      ? env.apiUrl.slice(0, -1)
+      : env.apiUrl;
 
-    const response = await fetch(`${baseUrl}/api/v1/resumes/download-from-url`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
+    const response = await fetch(
+      `${baseUrl}/api/v1/resumes/download-from-url`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      },
+    );
 
     if (!response.ok) {
       let errorInfo;
@@ -119,7 +143,7 @@ export const api = {
       throw new ApiError(
         errorInfo?.detail || response.statusText || "Failed to download file.",
         response.status,
-        errorInfo
+        errorInfo,
       );
     }
 
@@ -134,9 +158,10 @@ export const api = {
 
   getJobs: async (params: JobFilterParams): Promise<JobListResponse> => {
     const query = new URLSearchParams();
-    
+
     if (params.page !== undefined) query.append("page", params.page.toString());
-    if (params.limit !== undefined) query.append("limit", params.limit.toString());
+    if (params.limit !== undefined)
+      query.append("limit", params.limit.toString());
     if (params.source) query.append("source", params.source);
     if (params.job_type) query.append("job_type", params.job_type);
     if (params.location) query.append("location", params.location);
