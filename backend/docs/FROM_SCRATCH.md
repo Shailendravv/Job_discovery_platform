@@ -43,7 +43,7 @@ This is a **job search assistant** backend. It lets users:
 | **Python 3.13+** | Runtime |
 | **FastAPI** | HTTP API framework |
 | **MongoDB + Motor** | Database (async driver) |
-| **Groq (LLaMA 3.3 70B)** | LLM provider for resume parsing/tailoring |
+| **Multi-Provider LLM** (Groq, Cerebras, SambaNova, NVIDIA, OpenRouter) | Provider-level fallback chain for LLM calls |
 | **Cloudinary** | File storage for uploaded and generated documents |
 | **Mammoth** | DOCX → HTML conversion (preserves formatting) |
 | **htmldocx** | HTML → DOCX conversion |
@@ -99,7 +99,17 @@ text with font metadata, then we generate HTML from the extracted elements.
 │       │         │          │          │          │           │
 │       ▼         ▼          ▼          ▼          ▼           │
 │  ┌───────────────────────────────────────────────────┐      │
-│  │  call_llm() — Groq/Ollama LLM provider            │      │
+│  │  call_llm() — Multi-Provider LLM Layer            │      │
+│  │                                                     │      │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐   │      │
+│  │  │  Groq   │ │Cerebras │ │SambaNova│ │ NVIDIA │   │      │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └───┬────┘   │      │
+│  │       │           │           │           │         │      │
+│  │       └───────────┴───────────┴───────────┘         │      │
+│  │                        ▼  (falls through on failure) │      │
+│  │  ┌─────────────────────────────────────────────┐   │      │
+│  │  │ OpenRouter (model-level fallback, 8 models) │   │      │
+│  │  └─────────────────────────────────────────────┘   │      │
 │  └───────────────────────────────────────────────────┘      │
 │       │                                                     │
 │       ▼                                                     │
@@ -123,7 +133,7 @@ text with font metadata, then we generate HTML from the extracted elements.
 4. Converts to HTML:
    - DOCX: mammoth → HTML (preserves bold, links, headings)
    - PDF: PyMuPDF extracts text + font metadata → generates HTML
-5. Parses extracted text with Groq LLM (extracts name, skills, etc.)
+5. Parses extracted text with LLM (extracts name, skills, etc.)
 6. Uploads original file to Cloudinary
 7. Saves to MongoDB: { resume_id, extracted_text, resume_html, parsed_data, ... }
 ```
@@ -133,15 +143,14 @@ text with font metadata, then we generate HTML from the extracted elements.
 ```
 1. User sends { resume_id, job_id }
 2. Server fetches resume + job from MongoDB
-3. Loads resume_html from database (or generates from plain text for legacy resumes)
-4. Calls Groq LLM with prompt: "Edit this HTML text to match the job, preserve all tags"
-5. Sanitizes returned HTML with BeautifulSoup
-6. Generates downloadable files:
-   - DOCX: htmldocx (HTML → DOCX)
-   - PDF: Playwright (HTML → PDF via Chromium)
-   - Cover letter PDF: reportlab (plain text)
-7. Uploads all files to Cloudinary
-8. Returns download URLs to frontend
+3. Strips PII (name, email, phone) from parsed resume data
+4. If resume data is large: splits into 2-3 chunks for parallel LLM processing
+5. Each chunk is tailored independently (rewritten to match job keywords)
+6. Reassembles chunks into final JSON, reinjects PII
+7. Generates HTML from tailored JSON → DOCX (htmldocx) → PDF (Playwright)
+8. Generates cover letter via LLM → PDF (reportlab)
+9. Uploads all files to Cloudinary
+10. Returns download URLs + tailored JSON + ATS keyword analysis
 ```
 
 ---
@@ -152,7 +161,12 @@ text with font metadata, then we generate HTML from the extracted elements.
 
 - Python 3.13+
 - MongoDB (Atlas or local) — get a free cluster at mongodb.com
-- Groq API key — get one at console.groq.com
+- At least one LLM provider API key:
+  - **Groq**: console.groq.com
+  - **Cerebras**: console.cerebras.ai/api-keys
+  - **SambaNova**: cloud.sambanova.ai/apis
+  - **NVIDIA**: build.nvidia.com
+  - **OpenRouter**: openrouter.ai/keys
 - Cloudinary account (optional, for file storage) — cloudinary.com
 
 ### Step 1: Clone and enter backend
@@ -187,10 +201,26 @@ Fill in these **required** values:
 
 ```env
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/jobapp
-GROQ_API_KEY=gsk_your_key_here
 SEARXNG_URL=http://localhost:4000
 CAMOFOX_URL=http://localhost:4000
 LINKEDIN_GUEST_API_ENABLED=False
+```
+
+Set `LLM_PROVIDER` to your preferred mode:
+
+```env
+# Single provider (choose one):
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_your_key_here
+
+# Or multi-provider fallback chain:
+LLM_PROVIDER=multi
+LLM_PROVIDER_CHAIN=groq,cerebras,sambanova,nvidia,openrouter
+GROQ_API_KEY=gsk_your_key_here
+CEREBRAS_API_KEY=your_cerebras_key
+SAMBANOVA_API_KEY=your_sambanova_key
+NVIDIA_API_KEY=nvapi-your_nvidia_key
+OPENROUTER_API_KEY=sk-or-your_openrouter_key
 ```
 
 Optional but recommended:
@@ -234,26 +264,101 @@ curl http://localhost:8000/health
 
 All configuration lives in `.env` at `backend/.env` (gitignored). A full list:
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `MONGODB_URI` | **Yes** | — | MongoDB connection string |
-| `SEARXNG_URL` | **Yes** | — | SearXNG instance URL |
-| `CAMOFOX_URL` | **Yes** | — | Camofox search URL |
-| `LINKEDIN_GUEST_API_ENABLED` | **Yes** | — | Enable LinkedIn job search (`True`/`False`) |
-| `GROQ_API_KEY` | No | — | Groq API key (needed for LLM features) |
-| `GROQ_MODEL_NAME` | No | `llama-3.3-70b-versatile` | Groq model to use |
-| `LLM_PROVIDER` | No | `ollama` | `groq`, `ollama`, or `gemini` |
-| `CLOUDINARY_CLOUD_NAME` | No | — | Cloudinary cloud name |
-| `CLOUDINARY_API_KEY` | No | — | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | No | — | Cloudinary API secret |
-| `MCP_SEARCH_URL` | No | `http://localhost:8001` | MCP search server |
-| `MCP_BROWSE_URL` | No | `http://localhost:8002` | MCP browse server |
-| `Ollama` | No | `http://localhost:11434` | Ollama server URL |
-| `MODEL_NAME` | No | `qwen2.5-coder:1.5b` | Ollama model name |
-| `MODEL_TEMPERATURE` | No | `0.1` | LLM temperature |
-| `SEARCH_MAX_RESULTS` | No | `15` | Max jobs to return per search |
-| `SEARXNG_ENABLED` | No | `False` | Enable SearXNG search |
-| `LOG_LEVEL` | No | `INFO` | Logging level |
+### Required
+
+| Variable | Description |
+|---|---|
+| `MONGODB_URI` | MongoDB connection string |
+| `SEARXNG_URL` | SearXNG instance URL |
+| `CAMOFOX_URL` | Camofox search URL |
+| `LINKEDIN_GUEST_API_ENABLED` | Enable LinkedIn job search (`True`/`False`) |
+
+### LLM Provider — Selection
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_PROVIDER` | `ollama` | `"multi"` for fallback chain, or `"ollama"`, `"openrouter"`, `"groq"`, `"cerebras"`, `"sambanova"`, `"nvidia"` |
+| `LLM_PROVIDER_CHAIN` | `groq,cerebras,sambanova,nvidia,openrouter` | Comma-separated provider chain (only used when `LLM_PROVIDER=multi`) |
+| `MODEL_TEMPERATURE` | `0.1` | LLM temperature (applied across all providers) |
+
+### Ollama
+
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `qwen2.5-coder:1.5b` | Model name |
+
+### OpenRouter
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENROUTER_API_KEY` | — | OpenRouter API key |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | API base URL |
+| `OPENROUTER_MODEL` | `qwen/qwen3-coder:free` | Preferred model (falls back through 8 free-tier models on failure) |
+
+### Groq
+
+| Variable | Default | Description |
+|---|---|---|
+| `GROQ_API_KEY` | — | Groq API key (console.groq.com) |
+| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | API base URL |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Model name |
+
+### Cerebras
+
+| Variable | Default | Description |
+|---|---|---|
+| `CEREBRAS_API_KEY` | — | Cerebras API key (console.cerebras.ai/api-keys) |
+| `CEREBRAS_BASE_URL` | `https://api.cerebras.ai/v1` | API base URL |
+| `CEREBRAS_MODEL` | `gpt-oss-120b` | Model name |
+
+### SambaNova
+
+| Variable | Default | Description |
+|---|---|---|
+| `SAMBANOVA_API_KEY` | — | SambaNova API key (cloud.sambanova.ai/apis) |
+| `SAMBANOVA_BASE_URL` | `https://api.sambanova.ai/v1` | API base URL |
+| `SAMBANOVA_MODEL` | `gpt-oss-120b` | Model name |
+
+### NVIDIA NIM
+
+| Variable | Default | Description |
+|---|---|---|
+| `NVIDIA_API_KEY` | — | NVIDIA API key (build.nvidia.com) |
+| `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` | API base URL |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3-super-120b-a12b` | Model name |
+
+### Storage
+
+| Variable | Default | Description |
+|---|---|---|
+| `CLOUDINARY_CLOUD_NAME` | — | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | — | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | — | Cloudinary API secret |
+
+### Search
+
+| Variable | Default | Description |
+|---|---|---|
+| `SEARCH_MAX_RESULTS` | `15` | Max jobs to return per search |
+| `BROWSE_TOP_N` | `30` | Max job pages to browse for full details |
+| `SEARCH_SITES` | (list of ATS domains) | Comma-separated career site domains |
+| `SEARCH_FRESH` | `True` | Only search for recent jobs |
+| `SEARCH_CAREERS` | `False` | Include career page search |
+| `SETTLE_SECONDS` | `1.5` | Delay between search requests |
+| `MAX_SNAPSHOT_CHARS` | `12000` | Max chars to snapshot from job pages |
+| `SEARXNG_ENABLED` | `False` | Enable SearXNG search |
+
+### Other
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_SEARCH_URL` | `http://localhost:8001` | MCP search server |
+| `MCP_BROWSE_URL` | `http://localhost:8002` | MCP browse server |
+| `LINKEDIN_GUEST_API_LOCATION` | `India` | Location filter for LinkedIn |
+| `LINKEDIN_GUEST_API_TIME_RANGE` | `r86400` | Time range for LinkedIn search |
+| `LINKEDIN_GUEST_API_MAX_RESULTS` | `15` | Max LinkedIn results |
+| `LOG_LEVEL` | `INFO` | Logging level |
 
 ### For AI assistants
 
@@ -415,10 +520,10 @@ file: <PDF or DOCX file>
 
 Supports: PDF, DOC, DOCX (max 10 MB).
 
-#### Tailor Resume
+#### Tailor Resume (Structured JSON Pipeline)
 
 ```
-POST /api/v1/resumes/tailor
+POST /api/v1/resumes/tailor-structured
 {
   "resume_id": "<MongoDB ObjectId string>",
   "job_id": "<MongoDB ObjectId string>"
@@ -427,13 +532,25 @@ POST /api/v1/resumes/tailor
 → {
     "resume_id": "...",
     "job_id": "...",
-    "tailored_text": "Rewritten resume with job-matched keywords...",
+    "tailored_data": {
+      "summary": "Experienced engineer with 5 years in React...",
+      "skills": ["React", "TypeScript", "Python"],
+      "experience": [...],
+      "projects": [...],
+      "education": [...],
+      "certifications": []
+    },
+    "tailored_text": "Plain text version of the tailored resume...",
     "cover_letter": "Dear Hiring Manager...",
     "download_urls": {
       "pdf": "https://res.cloudinary.com/...resume_pdf.pdf",
       "docx": "https://res.cloudinary.com/...resume_docx",
       "cover_letter_pdf": "https://res.cloudinary.com/...cover_letter.pdf"
-    }
+    },
+    "ats_keywords_matched": ["React", "TypeScript"],
+    "ats_keywords_missing": ["GraphQL"],
+    "optimization_notes": ["Consider adding GraphQL experience"],
+    "llm_model": "qwen/qwen3-coder:free"
   }
 ```
 
@@ -451,10 +568,11 @@ POST /api/v1/resumes/download-from-url
 ### Response Models (defined in `app/models/resume.py`)
 
 - `ResumeUploadResponse`: resume_id, cloudinary_url, parsed_data, extracted_text_preview, processing_status
-- `ResumeTailorRequest`: resume_id (string), job_id (string)
-- `ResumeTailorResponse`: resume_id, job_id, tailored_text, cover_letter, download_urls
-- `ResumeTailorErrorResponse`: resume_id, job_id, error, tailored_text (optional)
-- `DownloadUrls`: pdf (str), docx (str), cover_letter_pdf (str, optional)
+- `StructuredTailorRequest`: resume_id (string), job_id (string)
+- `StructuredTailorResponse`: resume_id, job_id, tailored_data (TailoredResumeData), tailored_text, cover_letter, download_urls (StructuredTailorDownloadUrls), ats_keywords_matched, ats_keywords_missing, optimization_notes, llm_model
+- `StructuredTailorErrorResponse`: resume_id, job_id, error, tailored_text (optional)
+- `StructuredTailorDownloadUrls`: pdf (str), docx (str), cover_letter_pdf (str, optional)
+- `TailoredResumeData`: summary, skills, experience, projects, education, certifications
 
 ---
 
@@ -470,7 +588,6 @@ This is the most important service. It implements the HTML round-trip:
 | `elements_to_html(elements)` | `list[ResumeElement]` | HTML string | Manual generation |
 | `html_to_docx(html)` | HTML string | DOCX bytes | htmldocx |
 | `html_to_pdf_async(html)` | HTML string | PDF bytes | Playwright |
-| `validate_html(html)` | HTML string | Sanitized HTML | BeautifulSoup |
 | `extract_text_from_html(html)` | HTML string | Plain text | BeautifulSoup |
 | `plain_text_to_html(text)` | Plain text | HTML string | Manual wrapping |
 
@@ -479,19 +596,40 @@ Key design:
 - `html_to_pdf_async` runs Playwright in a thread pool via `loop.run_in_executor` to avoid blocking the async event loop
 - If Playwright is unavailable, falls back to reportlab text-based PDF generation
 
-### `app/services/resume_tailor.py` — LLM Tailoring
+### `app/services/structured_tailor.py` — LLM Tailoring (Structured JSON Pipeline)
 
-Three tailoring strategies (all using `call_llm` from `app.core.llm`):
+The **active** tailoring pipeline. Uses JSON-in/JSON-out with PII-safe chunking:
 
-| Function | Use Case | Prompt |
-|---|---|---|
-| `tailor_resume_text(text, job)` | Legacy resumes (no HTML stored) | Tells LLM to return plain text |
-| `tailor_resume_html(html, job)` | **Primary path** | Tells LLM to preserve all HTML tags, only edit text content |
-| `tailor_resume_structured(elements, job)` | Deprecated (kept for reference) | JSON-in/JSON-out with schema constraints |
+```
+1. Take parsed_data (JSON) + job description (JSON)
+2. Strip PII, education, certifications via pii_service.py (factual data preserved)
+3. If data is large: split into 2-3 chunks, call LLM per chunk (parallel)
+4. Reassemble chunks → final JSON → HTML → DOCX → PDF
+5. Analyze ATS keyword match rates + generate optimization notes
+```
+
+Key functions:
+
+| Function | Purpose |
+|---|---|
+| `tailor_resume_structured(resume_text, parsed_data, job)` | Main entry point — full pipeline |
+| `_chunk_experience(experience, n_chunks)` | Split experience into balanced chunks |
+| `_reassemble_chunks(chunks, base_data)` | Merge LLM outputs back together |
+| `_generate_html_from_data(data, pii)` | Build HTML from structured JSON |
+| `_analyze_ats_keywords(data, job)` | Compute match/missing keyword lists |
+
+### `app/services/pii_service.py` — PII Stripping & Reinjection
+
+Ensures personally identifiable information (name, email, phone) is **removed before LLM processing** and reinjected after:
+
+| Function | Purpose |
+|---|---|
+| `strip_pii(data)` | Parses parsed_data → removes name/email/phone → returns safe copy + extracted PII |
+| `reinject_pii(data, pii)` | Puts name/email/phone back into the final output |
 
 ### `app/services/resume_parser.py` — LLM Parsing
 
-Takes plain text resume → Groq LLM → structured JSON (name, skills, experience, education, etc.).
+Takes plain text resume → configured LLM → structured JSON (name, skills, experience, education, etc.).
 
 ### `app/services/cover_letter.py` — LLM Cover Letter
 
@@ -544,26 +682,75 @@ Key rules for Cloudinary:
 | `get_jobs(db, filters)` | Query jobs with pagination, sorting, text search |
 | `get_job_by_id(db, job_id)` | Fetch job by ObjectId |
 
-### `app/core/llm.py` — LLM Provider
+### `app/core/llm.py` — LLM Entry Point
 
-`call_llm(prompt, json_format=False, timeout=120, provider=None)`
+`call_llm(prompt, json_format=False, timeout=120, provider=None, max_tokens=4096, system_prompt=None)`
 
 This is the **single entry point** for all LLM calls. It:
-1. Checks `LLM_PROVIDER` setting (or explicit `provider` arg)
-2. Routes to the appropriate provider implementation:
-   - **Groq**: Uses `groq` Python SDK with `response_format={"type": "json_object"}` for JSON mode
-   - **Ollama**: Uses `ollama` Python SDK with threading for timeout support
-   - **Gemini**: Not fully implemented
-3. Returns the raw response string
+1. Delegates to `get_llm_provider(provider)` from `app/services/llm/factory.py`
+2. Calls `provider.generate()` (sync) or `provider.generate_async()` (async)
+3. Returns the raw response string (or empty string on failure)
 
-**Important**: `call_llm` is a **synchronous** function (not async). When called from
-async endpoints, it blocks the event loop. This is acceptable for the current
-workload but should be wrapped in `run_in_executor` if concurrency becomes an issue.
+The `provider` parameter accepts:
+- **`None`** — uses the `LLM_PROVIDER` env var (or `LLM_PROVIDER_CHAIN` if `LLM_PROVIDER=multi`)
+- **`"ollama"`, `"groq"`, `"cerebras"`, `"sambanova"`, `"nvidia"`, `"openrouter"`** — uses that single provider
+- **`"multi"`** — uses the fallback chain from `LLM_PROVIDER_CHAIN`
+
+**Important**: `call_llm` is a **synchronous** function that wraps the async call. When called from async endpoints, use `call_llm_async` instead to avoid blocking the event loop.
+
+### `app/services/llm/` — Provider Architecture
+
+The LLM provider system lives in `app/services/llm/` and follows an abstract base class pattern:
+
+| File | Class | Provider |
+|---|---|---|
+| `base.py` | `LLMProvider` (ABC), `LLMResult` | Abstract interface |
+| `ollama_provider.py` | `OllamaProvider` | Local Ollama instance |
+| `openrouter_provider.py` | `OpenRouterProvider` | OpenRouter API (with model-level fallback) |
+| `groq_provider.py` | `GroqProvider` | Groq API |
+| `cerebras_provider.py` | `CerebrasProvider` | Cerebras API |
+| `sambanova_provider.py` | `SambaNovaProvider` | SambaNova API |
+| `nvidia_provider.py` | `NvidiaProvider` | NVIDIA NIM API |
+| `multi_provider.py` | `MultiProvider` | Orchestrator (chains multiple providers) |
+| `fallback_manager.py` | `FallbackManager` | Model-level fallback (used by OpenRouter) |
+| `factory.py` | `get_llm_provider()` | Provider factory / singleton cache |
+
+#### Multi-Provider Fallback
+
+When `LLM_PROVIDER=multi`, `MultiProvider` chains providers in the order specified by `LLM_PROVIDER_CHAIN` (default: `groq,cerebras,sambanova,nvidia,openrouter`). On **any** error from a provider (429 rate limit, timeout, 5xx, empty response), it falls through to the next provider.
+
+```
+Groq ──failure──▶ Cerebras ──failure──▶ SambaNova ──failure──▶ NVIDIA ──failure──▶ OpenRouter
+                                                                                     │
+                                                                                     ▼
+                                                                            8 free-tier models
+                                                                           (model-level fallback)
+```
+
+The `OpenRouterProvider` itself wraps `FallbackManager` which internally tries 8 free-tier models with jittered exponential backoff. So if the chain reaches OpenRouter, it exhausts its own model fallback before returning failure.
+
+#### Logging
+
+Every provider logs structured messages so you can trace which provider+model handled each request:
+
+```
+[llm:multi] attempting provider=groq (1/5)
+[llm:groq] failed — model=llama-3.3-70b-versatile error=rate limit exceeded
+[llm:multi] provider=groq failed — falling through to next provider
+[llm:multi] attempting provider=cerebras (2/5)
+[llm:cerebras] success — model=gpt-oss-120b response_time=1234ms
+[llm:multi] success — provider=cerebras model=gpt-oss-120b response_time=1234ms attempts=2
+```
 
 ### `app/core/config.py` — Settings
 
 Uses `pydantic_settings.BaseSettings`. Reads from `.env` file automatically.
 The `Settings` class is instantiated once at module level as `settings`.
+
+Key LLM-related settings:
+- `LLM_PROVIDER` — selects provider mode (`"multi"`, `"ollama"`, `"openrouter"`, `"groq"`, etc.)
+- `LLM_PROVIDER_CHAIN` — comma-separated chain for multi-provider fallback
+- Per-provider `*_API_KEY`, `*_BASE_URL`, `*_MODEL` vars for each supported provider
 
 ### `app/core/database.py` — MongoDB Connection
 
@@ -648,18 +835,57 @@ headings by comparing font sizes to the page's most common body size. Then
 **Fallback**: If any step in the HTML conversion fails, `plain_text_to_html()`
 wraps the extracted plain text in basic `<p>` tags.
 
-### 8.2 Tailoring: LLM Edits the HTML
+### 8.2 Tailoring: Structured JSON Pipeline
 
-The LLM prompt (`TAILOR_HTML_PROMPT` in `resume_tailor.py`) instructs:
+The active tailoring pipeline uses **structured JSON** (not HTML editing). The flow:
 
-> "Rewrite the resume text to best match the job. CRITICAL RULE: Preserve
-> all HTML tags and structure EXACTLY as they are. Only change the TEXT
-> content between tags. Do NOT add, remove, or modify any HTML tags."
+```
+parsed_data (JSON)                                                 
+      │                                                            
+      ▼                                                            
+┌─────────────────┐                                                
+│  strip_pii()    │  → removes name/email/phone, stores as PII     
+└────────┬────────┘                                                
+         ▼                                                        
+┌─────────────────┐                                                
+│  chunk if large │  → splits experience into 2-3 balanced chunks  
+└────────┬────────┘                                                
+         ▼                                                        
+┌─────────────────┐                                                
+│  LLM per chunk  │  → each chunk: "rewrite bullet points to match 
+│  (parallel)     │     JD, use stronger action verbs, keep facts" 
+└────────┬────────┘                                                
+         ▼                                                        
+┌─────────────────┐                                                
+│  reassemble     │  → merges LLM outputs + base data              
+└────────┬────────┘                                                
+         ▼                                                        
+┌─────────────────┐                                                
+│  reinject_pii() │  → puts name/email/phone back                  
+└────────┬────────┘                                                
+         ▼                                                        
+┌─────────────────┐                                                
+│  JSON → HTML    │  → _generate_html_from_data()                  
+└────────┬────────┘                                                
+         ▼                                                        
+┌─────────────────┐                                                
+│  HTML → DOCX    │  → html_to_docx()                              
+│  HTML → PDF     │  → html_to_pdf_async()                        
+└─────────────────┘                                                
+```
 
-After the LLM responds, `validate_html()` uses BeautifulSoup to:
-- Parse the HTML into a valid DOM tree (fixes unclosed tags)
-- Removes any `<script>` or `<style>` tags the LLM might have injected
-- Returns well-formed HTML
+**Why JSON instead of HTML?**
+- JSON has a fixed schema → no risk of the LLM breaking HTML tags
+- Chunking is natural (split experience array) vs. splitting HTML mid-tag
+- PII stripping is trivial (just remove fields) vs. scanning HTML text
+- ATS keyword analysis is straightforward (compare JSON fields to JD)
+- LLM can focus on content quality instead of tag preservation
+
+The LLM prompt (`tailor_chunk_system_prompt` / `tailor_chunk_user_prompt` in `structured_tailor.py`) instructs the model to:
+- Rewrite bullet points to match job description keywords
+- Use stronger action verbs (led, designed, implemented, optimized)
+- Keep all factual information accurate
+- Return strictly valid JSON matching the output schema
 
 ### 8.3 Download: Converting Back to DOCX and PDF
 
@@ -695,21 +921,11 @@ class ResumeElement(BaseModel):
 ```
 
 This model is used as an intermediate representation when converting PDFs to
-HTML (since mammoth can't handle PDFs). It's also the data structure used by
-the (now deprecated) structured elements pipeline.
-
-### 8.5 Legacy Support
-
-Resumes uploaded **before** the HTML round-trip was implemented won't have
-`resume_html` in MongoDB. The system detects this and falls back to:
-1. `tailor_resume_text()` → plain text tailoring via LLM
-2. `plain_text_to_html()` → wraps result in basic HTML
-3. Same DOCX/PDF generation from the basic HTML (formatting will be minimal)
-
-Users should re-upload their resumes after the HTML update to get full
-formatting preservation.
+HTML (since mammoth can't handle PDFs).
 
 ---
+
+
 
 ## 9. Agent Workflows
 
@@ -823,7 +1039,7 @@ python -m pytest tests/ -v
 3. Note the `resume_id` from the response
 4. Get a job ObjectId from the database, then tailor:
    ```bash
-   curl -X POST http://localhost:8000/api/v1/resumes/tailor \
+   curl -X POST http://localhost:8000/api/v1/resumes/tailor-structured \
      -H "Content-Type: application/json" \
      -d '{"resume_id": "<resume_id>", "job_id": "<job_id>"}'
    ```
@@ -832,7 +1048,7 @@ python -m pytest tests/ -v
 ### Testing the HTML round-trip directly
 
 ```python
-from app.services.html_service import docx_to_html, html_to_docx, validate_html
+from app.services.html_service import docx_to_html, html_to_docx
 
 # Read a DOCX file
 with open("resume.docx", "rb") as f:
@@ -841,9 +1057,6 @@ with open("resume.docx", "rb") as f:
 # DOCX → HTML
 html = docx_to_html(docx_bytes)
 print(html[:500])
-
-# Validate
-html = validate_html(html)
 
 # HTML → DOCX
 output_bytes = html_to_docx(html)
@@ -923,11 +1136,11 @@ basic `<p>` tags. Try:
 - Saving the DOCX in a newer/older Word format
 - Checking if the file is actually a DOCX (rename .doc files)
 
-### LLM returns malformed JSON or HTML
+### LLM returns malformed JSON
 
-- For HTML tailoring: `validate_html()` uses BeautifulSoup to fix unclosed tags
-- The per-element `try/except` in `tailor_resume_structured` skips bad elements
-- If the entire response fails, the original resume is returned untailored
+- Each chunk's LLM call is wrapped in `try/except` — bad chunks are skipped
+- JSON parsing uses `json.loads()` with cleanup (strip markdown fences)
+- If the entire response fails, the original resume data is returned untailored
 
 ### Playwright PDF generation fails
 
@@ -980,7 +1193,7 @@ backend/
 │   ├── core/
 │   │   ├── config.py           # Settings class (reads .env)
 │   │   ├── database.py         # MongoDB connection (async)
-│   │   └── llm.py              # call_llm() — Groq + Ollama provider
+│   │   └── llm.py              # call_llm() — Multi-provider entry point
 │   │
 │   ├── models/
 │   │   ├── resume.py           # Pydantic models for API request/response
@@ -989,13 +1202,27 @@ backend/
 │   │
 │   ├── services/
 │   │   ├── html_service.py     # ⭐ HTML round-trip (mammoth, htmldocx, Playwright)
-│   │   ├── resume_tailor.py    # LLM tailoring (text, HTML, structured)
+│   │   ├── structured_tailor.py # ⭐ Structured JSON tailoring (PII-safe, chunked)
+│   │   ├── pii_service.py      # PII stripping & reinjection
 │   │   ├── resume_parser.py    # LLM resume parsing (extract name/skills/etc)
 │   │   ├── cover_letter.py     # LLM cover letter generation
 │   │   ├── docx_service.py     # DOCX read/write (python-docx)
 │   │   ├── PDF_service.py      # PDF read/write (pypdf, PyMuPDF, reportlab)
 │   │   ├── cloudinary_service.py  # Cloudinary upload/download/stream
-│   │   └── db_service.py       # MongoDB CRUD operations
+│   │   ├── db_service.py       # MongoDB CRUD operations
+│   │   │
+│   │   └── llm/                # ⭐ Multi-provider LLM architecture
+│   │       ├── __init__.py         # Re-exports all providers
+│   │       ├── base.py            # LLMProvider ABC + LLMResult
+│   │       ├── factory.py         # get_llm_provider() factory
+│   │       ├── fallback_manager.py  # Model-level fallback (OpenRouter)
+│   │       ├── multi_provider.py  # Provider-level orchestration
+│   │       ├── ollama_provider.py # Ollama provider
+│   │       ├── openrouter_provider.py # OpenRouter provider
+│   │       ├── groq_provider.py   # Groq provider
+│   │       ├── cerebras_provider.py  # Cerebras provider
+│   │       ├── sambanova_provider.py # SambaNova provider
+│   │       └── nvidia_provider.py # NVIDIA NIM provider
 │   │
 │   └── agents/
 │       ├── state.py            # AgentState TypedDict
@@ -1049,36 +1276,20 @@ backend/
 
 ## Appendix: LLM Prompts Reference
 
-### Resume Tailoring (HTML)
+### Resume Tailoring (Structured JSON)
 
-File: `app/services/resume_tailor.py` → `TAILOR_HTML_PROMPT`
+File: `app/services/structured_tailor.py` → `tailor_chunk_system_prompt` / `tailor_chunk_user_prompt`
 
-```
-You are a professional resume writer. You will receive a candidate's resume
-as formatted HTML, and a job description. Rewrite the resume text to best
-match the job requirements.
+The system prompt instructs the LLM to:
+- Rewrite experience bullet points to match job description keywords
+- Use stronger action verbs (led, designed, implemented, optimized)
+- Keep factual information accurate
+- Return strictly valid JSON matching the output schema
 
-CRITICAL RULE: You must PRESERVE all HTML tags and structure EXACTLY as they are.
-Only change the TEXT content between tags.
-- DO NOT add, remove, or modify any HTML tags or attributes
-- DO NOT change heading text (section names like "Experience" are fine as-is)
-- You MAY rewrite bullet items and paragraph text
-- Preserve ALL <a href="..."> tags and their href attributes
-
-Candidate's Resume HTML:
-{resume_html}
-
-Job Title: {job_title}
-Job Description:
-{job_description}
-Required Skills: {job_skills}
-
-Instructions:
-1. Rewrite paragraph and bullet text to use stronger action verbs and keywords.
-2. Reorder bullet points within sections to put the most relevant ones first.
-3. Keep all factual information accurate — do NOT fabricate experience.
-4. Return ONLY the modified HTML — no commentary, no markdown formatting.
-```
+The user prompt provides:
+- The chunk of experience entries (as JSON array)
+- The job description, title, and required skills
+- Instructions on ATS keyword optimization
 
 ### Cover Letter
 
@@ -1111,4 +1322,4 @@ resume text. Return ONLY valid JSON with this exact structure:
 
 ---
 
-*End of documentation. Last updated: 2026-06-20.*
+*End of documentation. Last updated: 2026-06-23.*

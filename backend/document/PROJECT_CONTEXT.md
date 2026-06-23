@@ -115,7 +115,8 @@ This is a **Job Search Backend API** that aggregates job listings from multiple 
 | **DOCX Service** | `app/services/docx_service.py` | (NEW) DOCX text extraction and generation |
 | **PDF Service** | `app/services/PDF_service.py` | PDF text extraction + PDF/DOCX generation |
 | **Resume Parser** | `app/services/resume_parser.py` | (NEW) Groq-powered resume → structured data parsing |
-| **Resume Tailor** | `app/services/resume_tailor.py` | (NEW) Groq-powered resume tailoring to job descriptions |
+| **Structured Tailor** | `app/services/structured_tailor.py` | PII-safe, chunked JSON pipeline for resume tailoring |
+| **PII Service** | `app/services/pii_service.py` | PII stripping & reinjection for privacy |
 | **Cover Letter Service** | `app/services/cover_letter.py` | (NEW) Groq-powered cover letter generation |
 
 ### SearXNG Anti-Bot Configuration
@@ -248,7 +249,8 @@ backend/
 │       ├── cloudinary_service.py      # (NEW) Cloudinary file upload
 │       ├── docx_service.py            # (NEW) DOCX read/write
 │       ├── resume_parser.py           # (NEW) Groq-powered resume parsing
-│       ├── resume_tailor.py           # (NEW) Groq-powered resume tailoring
+│       ├── structured_tailor.py      # PII-safe, chunked JSON pipeline
+│       ├── pii_service.py            # PII stripping & reinjection
 │       ├── cover_letter.py            # (NEW) Groq-powered cover letter generation
 │       ├── PDF_service.py             # PDF text extraction + PDF/DOCX generation
 │       └── db_service.py              # Database operations (jobs + resumes)
@@ -678,14 +680,15 @@ Defined in `app/models/job.py`:
 - **`JobSearchResponse`**: `jobs: List[JobResult]`, `saved: int`
 - **`JobListResponse`**: `jobs: List[dict]`, `pagination: PaginationMeta`
 
-Defined in `app/models/resume.py` (NEW/Updated):
+Defined in `app/models/resume.py`:
 
 - **`ParsedResumeData`**: Structured resume data (name, email, phone, education, experience, skills, etc.)
 - **`ResumeUploadResponse`**: `resume_id`, `cloudinary_url`, `parsed_data`, `extracted_text_preview`, `processing_status`
-- **`ResumeTailorRequest`**: `resume_id` + `job_id` (MongoDB ObjectIds)
-- **`DownloadUrls`**: `pdf`, `docx`, `cover_letter_pdf` URLs
-- **`ResumeTailorResponse`**: `resume_id`, `job_id`, `tailored_text`, `cover_letter`, `download_urls`
-- **`ResumeTailorErrorResponse`**: Error response with fallback content
+- **`StructuredTailorRequest`**: `resume_id` + `job_id` (MongoDB ObjectIds)
+- **`StructuredTailorResponse`**: `resume_id`, `job_id`, `tailored_data` (TailoredResumeData), `tailored_text`, `cover_letter`, `download_urls` (StructuredTailorDownloadUrls), `ats_keywords_matched`, `ats_keywords_missing`, `optimization_notes`, `llm_model`
+- **`StructuredTailorErrorResponse`**: Error response with fallback content
+- **`StructuredTailorDownloadUrls`**: `pdf`, `docx`, `cover_letter_pdf` URLs
+- **`TailoredResumeData`**: `summary`, `skills`, `experience`, `projects`, `education`, `certifications`
 
 ### MCP Tools (Model Context Protocol)
 
@@ -1068,13 +1071,14 @@ Load Balancer
 | `app/core/llm.py` | ~100 | LLM provider abstraction (Ollama + Groq implemented) |
 | `app/core/config.py` | ~50 | Settings (incl. Cloudinary + Groq config) |
 | `app/api/v1/jobs.py` | 88 | REST endpoints — POST /search + GET /jobs |
-| `app/api/v1/resumes.py` | ~220 | (NEW) REST endpoints — POST /upload + POST /tailor |
-| `app/models/resume.py` | ~70 | (NEW) Pydantic models for upload/tailor/cover letter |
-| `app/services/cloudinary_service.py` | ~35 | (NEW) Cloudinary file upload |
-| `app/services/docx_service.py` | ~50 | (NEW) DOCX read/write |
-| `app/services/resume_parser.py` | ~90 | (NEW) Groq-powered resume parsing |
-| `app/services/resume_tailor.py` | ~55 | (NEW) Groq-powered resume tailoring |
-| `app/services/cover_letter.py` | ~65 | (NEW) Groq-powered cover letter gen |
+| `app/api/v1/resumes.py` | ~520 | REST endpoints — POST /upload + POST /tailor-structured |
+| `app/models/resume.py` | ~100 | Pydantic models for upload/tailor-structured/cover letter |
+| `app/services/cloudinary_service.py` | ~35 | Cloudinary file upload |
+| `app/services/docx_service.py` | ~50 | DOCX read/write |
+| `app/services/resume_parser.py` | ~90 | Groq-powered resume parsing |
+| `app/services/structured_tailor.py` | ~1300 | PII-safe, chunked JSON tailoring pipeline |
+| `app/services/pii_service.py` | ~120 | PII stripping & reinjection for privacy |
+| `app/services/cover_letter.py` | ~65 | Groq-powered cover letter gen |
 | `app/services/PDF_service.py` | ~55 | PDF extraction + generation (enhanced) |
 | `app/services/db_service.py` | ~160 | DB ops — save_jobs, get_jobs, save_resume, save_tailor_session |
 | `services/searxng/settings.yml` | 30 | SearXNG outgoing config |
