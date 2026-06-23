@@ -11,9 +11,12 @@ class Settings(BaseSettings):
     MCP_BROWSE_URL: str = "http://localhost:8002"
 
     # ── LLM Provider Configuration ───────────────────────────────────────
-    LLM_PROVIDER: str = "ollama"  # 'ollama' or 'openrouter'
+    LLM_PROVIDER: str = "ollama"
     MODEL_NAME: str = "qwen2.5-coder:1.5b"
     MODEL_TEMPERATURE: float = 0.1
+
+    # Multi-provider chain (used when LLM_PROVIDER=multi)
+    LLM_PROVIDER_CHAIN: str = "groq,cerebras,sambanova,nvidia,openrouter"
 
     # Ollama
     Ollama: str = "http://localhost:11434"  # legacy compat, use OLLAMA_BASE_URL
@@ -25,10 +28,25 @@ class Settings(BaseSettings):
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_MODEL: Optional[str] = None  # preferred model, with fallback chain
 
-    # Legacy Groq / Gemini (kept for compat, not used by new providers)
+    # Groq
     GROQ_API_KEY: Optional[str] = None
-    GROQ_MODEL_NAME: str = "llama-3.3-70b-versatile"
-    GEMINI_API_KEY: Optional[str] = None
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
+    # Cerebras
+    CEREBRAS_API_KEY: Optional[str] = None
+    CEREBRAS_BASE_URL: str = "https://api.cerebras.ai/v1"
+    CEREBRAS_MODEL: str = "gpt-oss-120b"
+
+    # SambaNova
+    SAMBANOVA_API_KEY: Optional[str] = None
+    SAMBANOVA_BASE_URL: str = "https://api.sambanova.ai/v1"
+    SAMBANOVA_MODEL: str = "gpt-oss-120b"
+
+    # NVIDIA
+    NVIDIA_API_KEY: Optional[str] = None
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_MODEL: str = "nvidia/nemotron-3-super-120b-a12b"
 
     # ── Search Configuration ─────────────────────────────────────────────
     SEARCH_MAX_RESULTS: int = 15

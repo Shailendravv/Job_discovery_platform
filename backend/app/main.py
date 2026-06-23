@@ -70,7 +70,7 @@ async def startup():
 
     # Log legacy Groq status (for reference)
     if settings.GROQ_API_KEY:
-        log.info("  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL_NAME)
+        log.info("  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL)
 
     log.info("=== Search Provider Config ===")
     log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)

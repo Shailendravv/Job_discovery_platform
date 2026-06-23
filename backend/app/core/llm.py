@@ -36,17 +36,16 @@ def call_llm(
         prompt: The prompt text to send.
         json_format: If True, request structured JSON output.
         timeout: Maximum seconds to wait for a response.
-        provider: Override the configured provider (ignored — use LLM_PROVIDER env).
+        provider: Provider name or chain configuration.
+                  Examples: "ollama", "openrouter", "groq", "multi".
+                  If None, uses LLM_PROVIDER env var.
         max_tokens: Maximum tokens in the response.
         system_prompt: Optional system-level instruction.
 
     Returns:
         The generated text content, or empty string on failure.
-
-    Raises:
-        Various exceptions from the underlying provider (timeout, API error, etc.).
     """
-    llm = get_llm_provider()
+    llm = get_llm_provider(provider=provider)
     result = llm.generate(
         prompt,
         json_format=json_format,
@@ -79,7 +78,7 @@ async def call_llm_async(
     Same interface as call_llm but uses the provider's async path directly
     instead of wrapping in asyncio.run().
     """
-    llm = get_llm_provider()
+    llm = get_llm_provider(provider=provider)
     result = await llm.generate_async(
         prompt,
         json_format=json_format,
