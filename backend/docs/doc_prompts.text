@@ -1,0 +1,146 @@
+prompt to create and update the new feature
+
+Read backend\docs\AGENTS.md and follow it for the entire session.
+
+-------------------------------------------
+Below prompt is for existing feature 
+
+Read the actual implementation under backend\app\api\v1\resumes.py. Ignore any existing docs about this feature except to flag conflicts — don't treat them as accurate. Also read the tests under backend\tests if they exist, and use a real test case to ground the "Example" section in DOC_TEMPLATE.md, not an invented one. Write the doc to backend/docs/resume.md following DOC_TEMPLATE.md. If anything in the old docs contradicts what the code actually does, tell me explicitly instead of silently picking one.
+
+------------------------------------------
+Read me prompt for Fast API project
+
+You are a senior backend engineer and technical writer with deep expertise in FastAPI, Python project structuring, and developer documentation.
+
+Your task is to generate a **comprehensive, professional, and well-structured README.md file** for a FastAPI project.
+
+## Context
+
+I will provide:
+
+1. Project folder structure
+2. One or more reference documentation files
+3. (Optional) Additional notes about the project
+
+## Objectives
+
+Create a README that is:
+
+* Clear for beginners
+* Detailed enough for experienced developers
+* Production-quality and ready for GitHub
+
+## Instructions
+
+### 1. Analyze Inputs
+
+* Carefully analyze the provided folder structure and documentation
+* Infer project purpose, architecture, and workflows
+* Fill in reasonable gaps if information is missing (but do not hallucinate unknown features)
+
+### 2. README Structure
+
+Generate the README with the following sections:
+
+#### 📌 Project Title & Description
+
+* Concise and clear explanation of what the project does
+* Mention key technologies (FastAPI, database, etc.)
+
+#### 🚀 Features
+
+* Bullet list of core features
+
+#### 📂 Project Structure
+
+* Explain each folder and key file
+* Use a tree format like:
+
+```bash
+app/
+ ├── api/
+ ├── core/
+ ├── models/
+ ├── schemas/
+ ├── services/
+ └── main.py
+```
+
+* Add short descriptions for each
+
+#### ⚙️ Installation & Setup
+
+* Step-by-step instructions:
+
+  * Clone repo
+  * Create virtual environment
+  * Install dependencies
+  * Environment variables (.env)
+  * Run server
+
+#### ▶️ Running the Application
+
+* Commands to start FastAPI
+* Include uvicorn example
+
+#### 🔗 API Documentation
+
+* Mention Swagger UI and ReDoc URLs
+
+#### 🧪 Testing (if applicable)
+
+* How to run tests
+
+#### 🐳 Docker Setup (if applicable)
+
+* Instructions if Docker files are present
+
+#### 🌍 Environment Variables
+
+* Table of required variables with descriptions
+
+#### 🧠 Architecture Overview
+
+* Explain how different layers interact:
+
+  * Routes → Services → Models → Database
+
+#### 🛠 Tech Stack
+
+* List major technologies used
+
+#### 🤝 Contributing
+
+* Basic contribution guidelines
+
+#### 📄 License
+
+* Placeholder if not provided
+
+### 3. Style Guidelines
+
+* Use proper Markdown formatting
+* Use headings, bullet points, and code blocks
+* Keep language professional but easy to understand
+* Avoid unnecessary verbosity
+* Do NOT include vague or generic filler content
+
+### 4. Output Rules
+
+* Output only the final README.md content
+* Do not include explanations outside the README
+* Ensure it is clean and ready to paste into a repo
+
+## Input
+
+Here is the project information:
+
+[PASTE FOLDER STRUCTURE HERE]
+
+[PASTE DOCUMENTATION FILES HERE]
+
+[OPTIONAL NOTES]
+
+## Output
+
+Generate the complete README.md file.

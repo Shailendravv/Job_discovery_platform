@@ -1,477 +1,306 @@
-# Job Search Backend
+# Job App Backend
 
-## Prerequisites
+A FastAPI + MongoDB backend for job search aggregation, resume parsing, and AI-powered resume tailoring. Orchestrates multi-source job scraping (LinkedIn, SearXNG), stores results with full-text search, parses uploaded resumes via LLM, and tailors them against job descriptions through a PII-safe structured pipeline.
 
-Make sure the following services are running before starting the backend.
+**Key technologies:** FastAPI, Motor (async MongoDB), LangGraph, Ollama / Groq / OpenRouter / Cerebras / SambaNova / NVIDIA NIM, Cloudinary.
 
-### Docker Services
-Start SearXNG (search engine) and Camofox (headless browser) via Docker:
-```bash
-cd services
-docker-compose up -d
-```
+## Features
 
-| Service  | URL                        |
-|----------|----------------------------|
-| SearXNG  | http://localhost:8888      |
-| Camofox  | http://localhost:9500      |
-
-#### SearXNG Configuration
-
-The SearXNG container mounts custom configuration files from `services/searxng/`:
-
-- **`settings.yml`** — Enables JSON API format, configures outgoing HTTP/2 support, realistic Accept-Language headers, and extended timeouts (15s/30s) for slow job boards. The rate limiter is disabled (`limiter: false`) since LLM workflows fire many rapid requests.
-- **`limiter.toml`** — Whitelists Docker/localhost subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) so bot-detection warnings don't surface for API traffic.
-
-These files are bind-mounted as read-only into the container. If you need to customise, edit the files and restart the container:
-```bash
-docker restart searxng-mcp
-```
-
-### Ollama (LLM)
-Ensure Ollama is running with the required model:
-```bash
-ollama run qwen2.5-coder:1.5b
-```
-Ollama listens on `http://localhost:11434` by default.
-
----
-
-## Environment Setup
-
-Copy `.env.example` to `.env` and fill in your values:
-```env
-MONGODB_URI=mongodb://localhost:27017/jobapp
-SEARXNG_URL=http://localhost:8888
-CAMOFOX_URL=http://localhost:9500
-Ollama=http://localhost:11434
-
-# MCP Server URLs
-MCP_SEARCH_URL=http://localhost:8001
-MCP_BROWSE_URL=http://localhost:8002
-
-# LLM Provider (ollama, groq, gemini)
-LLM_PROVIDER=ollama
-MODEL_NAME=qwen2.5-coder:1.5b
-MODEL_TEMPERATURE=0.1
-GROQ_API_KEY=
-GROQ_MODEL_NAME=llama-3.3-70b-versatile
-
-# Cloudinary (for resume file storage)
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
-
-# Search Configuration
-SEARCH_MAX_RESULTS=10
-BROWSE_TOP_N=15
-SEARCH_SITES=naukri.com,linkedin.com/jobs,apna.co,indeed.com,instahyre.com,shine.com,foundit.in
-SEARCH_FRESH=true
-SEARCH_CAREERS=false
-
-# SearXNG
-SEARXNG_ENABLED=false
-
-# LinkedIn Guest API
-LINKEDIN_GUEST_API_ENABLED=false
-LINKEDIN_GUEST_API_LOCATION=India
-LINKEDIN_GUEST_API_TIME_RANGE=r86400
-
-# Operations
-LOG_LEVEL=INFO
-```
-
-> A complete reference with all optional vars is available in `.env.example`.
-
-Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Database Migrations
-
-The project uses a migration system to manage MongoDB schema evolution. Migrations are stored in the `migrations/` directory and tracked in the `_migrations` collection.
-
-### Available Migrations
-
-- **Migration 001**: Initial schema setup — creates all collections with JSON schema validation
-- **Migration 006**: Cleanup unused collections — removes collections not needed by current app
-- **Migration 007**: Create job search indexes — adds URL unique index and text index on `jobs` collection
-
-> Note: Migrations 002-005 were removed as they created features not in use (user auth, application tracking, skills taxonomy, company summaries, change streams). See `document/PROJECT_CONTEXT.md` for details.
-
-### Running Migrations
-
-#### Recommended: Use the Migration Runner (Automated)
-
-The `run_migrations.py` script automatically discovers and applies all pending migrations in order:
-
-```bash
-# Apply all pending migrations
-python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp
-
-# Show migration status (what's applied vs pending)
-python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp --status
-
-# List all available migrations
-python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp --list
-
-# Rollback all migrations (destructive!)
-python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp --rollback
-```
-
-The runner will:
-- Load all `.py` migration files from `migrations/` (sorted by filename)
-- Check which migrations are already applied in `_migrations` collection
-- Prompt for confirmation before applying pending ones
-- Execute them sequentially and record each application
-
-#### Manual: Run Individual Migrations
-
-If you prefer to run migrations one at a time:
-
-1. **Preview what will be changed** (optional but recommended):
-   ```bash
-   python scripts/list_unused_collections.py --uri "mongodb://localhost:27017" --db jobapp
-   ```
-
-2. **Run migration 001** (creates the full schema):
-   ```bash
-   python -m migrations.001_initial_schema --uri "mongodb://localhost:27017" --db jobapp
-   ```
-
-3. **Run migration 006** (cleans up unused collections — **destructive**):
-   ```bash
-   python -m migrations.006_cleanup_unused_collections --uri "mongodb://localhost:27017" --db jobapp
-   ```
-
-4. **Run migration 007** (creates job search indexes):
-   ```bash
-   python -m migrations.007_add_job_search_indexes --uri "mongodb://localhost:27017" --db jobapp
-   ```
-
-### Migration Order
-
-Always run migrations in order (the runner handles this automatically):
-
-```bash
-# Fresh setup: run 001 → 006 → 007
-# Or simply: python scripts/run_migrations.py --uri ...
-```
-
-### What Gets Created
-
-After completing the migrations, the following collections are active:
-- `jobs` — job listings (with URL unique index and text search index)
-- `resumes` — resume data (for future matching)
-- `_migrations` — migration tracking
-
-See `document/PROJECT_CONTEXT.md` for the complete schema.
-
----
-
-## Starting the App
-
-Run all commands from the **backend directory**.
-
-### Start MCP first
-
-1. `python -m app.agents.nodes.job_mcp_server`
-
-2. `python -m app.agents.nodes.job_mcp_browse_server`
-
-| MCP Server              | Port  | Purpose                        |
-|-------------------------|-------|--------------------------------|
-| job_mcp_server          | 8001  | Web search via SearXNG (uses shared httpx client with browser headers) |
-| job_mcp_browse_server   | 8002  | Page extraction via Camofox    |
-
-### Now run your main App
-```bash
-uvicorn app.main:app --reload
-```
-
-API available at `http://localhost:8000`
-
----
-
-## API Endpoints
-
-### POST /api/v1/jobs/search
-
-Search for jobs using a natural language query. Results are persisted to MongoDB and return a saved count.
-
-**Request:**
-```json
-{
-  "user_input": "React developer remote 4 years experience"
-}
-```
-
-**Response:**
-```json
-{
-  "jobs": [
-    {
-      "title": "Senior React Developer",
-      "company": "Tech Corp",
-      "location": "Remote",
-      "description": "Full job posting text...",
-      "url": "https://...",
-      "apply_url": "https://...",
-      "skills": ["react", "typescript"],
-      "job_type": "remote",
-      "posted_date": "2 days ago",
-      "salary": "$120k-$150k",
-      "source": "searxng"
-    }
-  ],
-  "saved": 10
-}
-```
-
-**Notes:**
-- Frontend sends ONLY `user_input`. All search targeting configuration lives in backend `.env`.
-- Results are automatically persisted to MongoDB with `save_jobs()`.
-- `saved` field indicates how many jobs were newly saved (duplicates by URL are skipped).
-
-#### Query Parameters
-
-| Parameter   | Type   | Description                           |
-|-------------|--------|---------------------------------------|
-| user_input  | string | Natural language job search query     |
-
-### GET /api/v1/jobs
-
-Retrieve stored jobs with filtering, full-text search, pagination, and sorting.
-
-**Example requests:**
-```bash
-# Basic paginated listing
-curl "http://localhost:8000/api/v1/jobs?page=1&limit=20"
-
-# Filter by source
-curl "http://localhost:8000/api/v1/jobs?source=linkedin"
-
-# Filter by job type
-curl "http://localhost:8000/api/v1/jobs?job_type=remote"
-
-# Full-text search across title, company, and description
-curl "http://localhost:8000/api/v1/jobs?q=react+developer"
-
-# Filter by location
-curl "http://localhost:8000/api/v1/jobs?location=remote"
-
-# Combined filters with sorting
-curl "http://localhost:8000/api/v1/jobs?source=searxng&job_type=full-time&q=python&sort_by=created_at&sort_order=desc&limit=10"
-```
-
-**Response:**
-```json
-{
-  "jobs": [
-    {
-      "_id": "...",
-      "title": "Senior React Developer",
-      "company": "Tech Corp",
-      "location": "Remote",
-      "description": "...",
-      "url": "https://...",
-      "skills": ["react", "typescript"],
-      "job_type": "remote",
-      "source": "searxng",
-      "search_query": "React developer",
-      "created_at": "2026-06-11T..."
-    }
-  ],
-  "pagination": {
-    "page": 1,
-    "limit": 20,
-    "total": 45,
-    "pages": 3
-  }
-}
-```
-
-#### Query Parameters
-
-| Parameter  | Type   | Default     | Description                                                  |
-|------------|--------|-------------|--------------------------------------------------------------|
-| page       | int    | 1           | Page number (>= 1)                                           |
-| limit      | int    | 20          | Results per page (1-100)                                     |
-| source     | string | —           | Filter by source: `searxng`, `linkedin`, etc.                 |
-| job_type   | string | —           | Filter by job type: `full-time`, `part-time`, `remote`, etc.  |
-| location   | string | —           | Filter by location (partial match)                            |
-| q          | string | —           | Full-text search across title, company, and description       |
-| sort_by    | string | `created_at`| Sort field: `created_at`, `updated_at`, `title`, `company`, `score` |
-| sort_order | string | `desc`      | Sort direction: `asc` or `desc`                               |
-
-### POST /api/v1/resumes/upload
-
-Upload a resume file (PDF or DOCX). The file is stored on Cloudinary, parsed by Groq LLM into structured data, and saved to MongoDB.
-
-**Request:** `multipart/form-data` with `file` field (PDF or DOCX, max 10 MB)
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8000/api/v1/resumes/upload" \
-  -F "file=@resume.pdf"
-```
-
-**Response:**
-```json
-{
-  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
-  "cloudinary_url": "https://res.cloudinary.com/.../resume.pdf",
-  "parsed_data": {
-    "name": "John Doe",
-    "email": "john@example.com",
-    "phone": "+1-555-123-4567",
-    "education": [{ "institution": "MIT", "degree": "B.S. Computer Science", "year": 2020 }],
-    "experience": [{ "company": "Tech Corp", "title": "Engineer", "duration": "2020-2024", "description": "..." }],
-    "skills": ["Python", "React", "TypeScript"],
-    "languages": ["English"],
-    "certifications": ["AWS Solutions Architect"]
-  },
-  "extracted_text_preview": "John Doe\njohn@example.com\n...",
-  "processing_status": "completed"
-}
-```
-
-**Flow:**
-1. Validate file type (PDF/DOCX only) and size (≤ 10 MB)
-2. Upload original file to Cloudinary
-3. Extract text (via pypdf for PDF, python-docx for DOCX)
-4. Parse text with Groq LLM → structured JSON
-5. Sanitize data for MongoDB schema compliance
-6. Save to MongoDB
-7. Return `resume_id`, `cloudinary_url`, and `parsed_data`
-
-### POST /api/v1/resumes/tailor
-
-Tailor a resume to a specific job description and generate a cover letter. Both are returned as text + Cloudinary download URLs.
-
-**Request:**
-```json
-{
-  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
-  "job_id": "65f1a2b3c4d5e6f7a8b9c0d2"
-}
-```
-
-**Example:**
-```bash
-curl -X POST "http://localhost:8000/api/v1/resumes/tailor" \
-  -H "Content-Type: application/json" \
-  -d '{"resume_id": "65f1a2b3c4d5e6f7a8b9c0d1", "job_id": "65f1a2b3c4d5e6f7a8b9c0d2"}'
-```
-
-**Response:**
-```json
-{
-  "resume_id": "65f1a2b3c4d5e6f7a8b9c0d1",
-  "job_id": "65f1a2b3c4d5e6f7a8b9c0d2",
-  "tailored_text": "John Doe\n\nProfessional Summary\n...",
-  "cover_letter": "Dear Hiring Manager,\n\nI am writing to express...\n\nSincerely,\nJohn Doe",
-  "download_urls": {
-    "pdf": "https://res.cloudinary.com/.../resume.pdf",
-    "docx": "https://res.cloudinary.com/.../resume.docx",
-    "cover_letter_pdf": "https://res.cloudinary.com/.../cover_letter.pdf"
-  }
-}
-```
-
-**Flow:**
-1. Fetch resume + job from MongoDB by ObjectId
-2. Call Groq LLM to tailor resume text to job description
-3. Call Groq LLM to generate cover letter
-4. Generate PDF + DOCX from tailored text
-5. Upload all files to Cloudinary
-6. Return text content + download URLs
-
----
+- **Multi-source job search** — aggregates results from LinkedIn Guest API, SearXNG meta-search engine, and configurable career sites via an MCP-based agent workflow.
+- **Persistent job storage** — upserts results into MongoDB (keyed by URL), supports filtering, pagination, full-text search, and sorting.
+- **Resume upload & LLM parsing** — accepts PDF and DOCX files, extracts text, converts to HTML, sends to an LLM for structured field extraction (name, skills, education, experience, etc.), and stores on Cloudinary.
+- **PII-safe structured tailoring** — strips personally identifying information before sending resume + job description to an LLM, then re-injects PII into the tailored result. Generates downloadable PDF and DOCX files plus a cover letter.
+- **Multi-provider LLM abstraction** — pluggable backend supporting Ollama (local), Groq, Cerebras, SambaNova, NVIDIA NIM, and OpenRouter with automatic fallback chaining.
+- **Proxy file download** — serves Cloudinary-stored files through the backend to work around free-plan access restrictions.
+- **Interactive API docs** — auto-generated Swagger UI and ReDoc.
 
 ## Project Structure
 
 ```
 backend/
 ├── app/
-│   ├── agents/
-│   │   ├── nodes/
-│   │   │   ├── job_mcp_server.py        # MCP search server (port 8001)
-│   │   │   └── job_mcp_browse_server.py # MCP browse server (port 8002)
-│   │   ├── mcp_client.py                # MCP HTTP client (StreamableHTTP)
-│   │   ├── search_provider.py           # SearchProvider wrapping MCP client
-│   │   └── job_workflow.py              # Main search + extract workflow
-│   ├── api/v1/
-│   │   ├── jobs.py                      # POST /api/v1/jobs/search + GET /api/v1/jobs
-│   │   └── resumes.py                   # POST /api/v1/resumes/upload + POST /api/v1/resumes/tailor
+│   ├── main.py                         # FastAPI application entry point, CORS, startup/shutdown
+│   │
+│   ├── api/
+│   │   ├── deps.py                     # Dependency injection (MongoDB session)
+│   │   └── v1/
+│   │       ├── jobs.py                 # POST /search, GET /jobs, GET /jobs/{id}
+│   │       └── resumes.py              # POST /upload, /tailor-structured, /download-from-url
+│   │
+│   ├── agents/                         # LangGraph job search agent system
+│   │   ├── graph.py                    # Agent graph definition
+│   │   ├── job_workflow.py             # Job search orchestration
+│   │   ├── search_provider.py          # Search provider abstraction
+│   │   ├── mcp_client.py               # MCP protocol client
+│   │   ├── state.py                    # Agent state schemas
+│   │   ├── nodes/                      # Pipeline steps (skill extraction, MCP servers, tailoring)
+│   │   └── tools/                      # Callable utilities (browse jobs, web search)
+│   │
 │   ├── core/
-│   │   ├── config.py                    # Settings from .env
-│   │   └── llm.py                       # LLM provider (Ollama / Groq / Gemini)
+│   │   ├── config.py                   # Pydantic Settings from .env
+│   │   ├── database.py                 # Motor MongoDB client (connect, close, get_db)
+│   │   └── llm.py                      # LLM routing helper
+│   │
 │   ├── models/
-│   │   ├── job.py                       # Pydantic models (JobSearchRequest, JobResult, etc.)
-│   │   └── resume.py                    # Pydantic models (ResumeUploadResponse, ResumeTailorResponse, ParsedResumeData, etc.)
+│   │   ├── job.py                      # JobResult, JobSearchResponse, JobListResponse, JobDetailResponse, etc.
+│   │   ├── resume.py                   # ParsedResumeData, ResumeUploadResponse, StructuredTailorResponse, etc.
+│   │   └── resume_elements.py          # Structured resume element models
+│   │
 │   └── services/
-│       ├── cloudinary_service.py        # Cloudinary file upload for resumes
-│       ├── docx_service.py              # DOCX text extraction and generation
-│       ├── resume_parser.py             # Groq-powered resume → structured data
-│       ├── resume_tailor.py             # Groq-powered resume tailoring
-│       ├── cover_letter.py              # Groq-powered cover letter generation
-│       ├── PDF_service.py               # PDF extraction + PDF/DOCX generation
-│       └── db_service.py                # Database operations (jobs + resumes)
-├── main.py
-├── services/
-│   ├── docker-compose.yml               # SearXNG + Camofox
-│   └── searxng/
-│       ├── settings.yml                 # SearXNG outgoing config (HTTP/2, timeouts, headers)
-│       └── limiter.toml                 # Rate limiter config (Docker subnet whitelist)
-├── migrations/
+│       ├── db_service.py               # CRUD for jobs, resumes, tailor_sessions
+│       ├── cloudinary_service.py       # Cloudinary upload, download URL generation, streaming
+│       ├── cover_letter.py             # Cover letter generation via LLM
+│       ├── docx_service.py             # DOCX text extraction (python-docx)
+│       ├── html_service.py             # HTML conversion (docx↔html, html→pdf)
+│       ├── PDF_service.py              # PDF text extraction (PyMuPDF) and generation (ReportLab)
+│       ├── pii_service.py              # PII redaction utilities
+│       ├── resume_parser.py            # Resume text → structured data via Groq LLM
+│       ├── structured_tailor.py        # Structured resume tailoring pipeline
+│       ├── llm/                        # LLM provider abstraction
+│       │   ├── base.py                 # Abstract provider
+│       │   ├── factory.py              # Provider factory
+│       │   ├── fallback_manager.py     # Fallback chain manager
+│       │   ├── groq_provider.py
+│       │   ├── cerebras_provider.py
+│       │   ├── sambanova_provider.py
+│       │   ├── nvidia_provider.py
+│       │   ├── ollama_provider.py
+│       │   ├── openrouter_provider.py
+│       │   └── multi_provider.py
+│       └── resume_tailor_engine/       # Tailoring sub-engine
+│           ├── llm_client.py
+│           ├── parser.py
+│           ├── reinjector.py           # Re-injects PII after LLM call
+│           ├── validator.py
+│           └── verifier.py
+│
+├── docs/                               # Developer documentation (per AGENTS.md workflow)
+│   ├── AGENTS.md
+│   ├── DOC_TEMPLATE.md
+│   ├── INDEX.md
+│   ├── jobs.md
+│   └── resume.md
+│
+├── migrations/                         # MongoDB schema migrations (numbered 001–009)
 │   ├── 001_initial_schema.py
-│   ├── 006_cleanup_unused_collections.py
-│   └── 007_add_job_search_indexes.py
-├── scripts/
+│   ├── ...
+│   └── ROLLBACK.py
+│
+├── scripts/                            # Operational utilities
 │   ├── run_migrations.py
-│   ├── list_unused_collections.py
+│   ├── create_indexes.py
+│   ├── clear_data.py
 │   ├── generate_test_data.py
-│   └── create_indexes.py
-├── requirements.txt
-├── .env.example               # Reference env vars template
-└── .env
+│   └── list_unused_collections.py
+│
+├── services/                           # Infrastructure Docker configs
+│   ├── docker-compose.yml              # SearXNG + Camofox browser service
+│   └── searxng/                        # SearXNG settings and limiter config
+│
+├── tests/                              # Unit tests
+│   ├── __init__.py
+│   └── test_db_service.py
+│
+├── test/                               # Integration tests
+│   └── test_integration.py
+│
+├── .env.example                        # Environment variable template
+├── requirements.txt                    # Python dependencies
+└── mcp_browse.py                       # Standalone MCP browse server
 ```
 
----
+## Architecture Overview
 
-## Utilities
+```
+┌──────────┐     ┌──────────────────────────────────────────────────────┐
+│  Client  │────▶│                 FastAPI (uvicorn)                     │
+└──────────┘     │                                                      │
+                 │  /api/v1/jobs/*          /api/v1/resumes/*            │
+                 │       │                         │                    │
+                 │       ▼                         ▼                    │
+                 │  ┌──────────┐          ┌──────────────┐              │
+                 │  │  Agents  │          │   Services   │              │
+                 │  │LangGraph │          │ ┌──────────┐ │              │
+                 │  │ workflow │          │ │Resume    │ │              │
+                 │  │ + MCP    │          │ │Parser    │ │              │
+                 │  │ servers  │          │ ├──────────┤ │              │
+                 │  └────┬─────┘          │ │Tailor    │ │              │
+                 │       │                │ │Engine    │ │              │
+                 │       ▼                │ ├──────────┤ │              │
+                 │  ┌──────────┐          │ │LLMProv.  │ │              │
+                 │  │ MongoDB  │◀─────────│ │Abstrac.  │ │              │
+                 │  │ (Motor)  │─────────▶│ ├──────────┤ │              │
+                 │  └──────────┘          │ │Cloudinary│ │              │
+                 │                        │ │+ Docs    │ │              │
+                 │                        │ └──────────┘ │              │
+                 └──────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                          ┌─────────────────┐
+                          │  External APIs   │
+                          │  LinkedIn Guest  │
+                          │  SearXNG         │
+                          │  LLM Providers   │
+                          │  Cloudinary      │
+                          └─────────────────┘
+```
 
-### Clear Data — `scripts/clear_data.py`
+The application follows a layered architecture:
+1. **Routes** (`app/api/v1/`) — validate inputs, delegate to agents/services, shape responses.
+2. **Agents** (`app/agents/`) — LangGraph-based orchestration for multi-step job search workflows.
+3. **Services** (`app/services/`) — all business logic: database CRUD, document processing, LLM calls, file storage.
+4. **LLM Abstraction** (`app/services/llm/`) — unified interface over 7 provider backends with automatic fallback.
+5. **Models** (`app/models/`) — Pydantic schemas for request validation and response serialization.
+6. **Core** (`app/core/`) — configuration, database connection lifecycle, shared utilities.
 
-Deletes all documents from the `jobs` and `resumes` collections while preserving the collections and their indexes. Useful for resetting the database between test runs.
+## Installation & Setup
+
+### Prerequisites
+- Python 3.11+
+- MongoDB (local or Atlas)
+- (Optional) Docker + Docker Compose for SearXNG and Camofox
+
+### 1. Clone the repository
+```bash
+git clone <repo-url>
+cd backend
+```
+
+### 2. Create and activate a virtual environment
+```bash
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Configure environment variables
+```bash
+cp .env.example .env
+# Edit .env with your MongoDB URI, API keys, and provider preferences
+```
+
+### 5. Install Playwright browsers (for browser-based scraping)
+```bash
+playwright install
+```
+
+### 6. (Optional) Start infrastructure services
+```bash
+cd services
+docker-compose up -d
+```
+
+### 7. Run database migrations
+```bash
+python scripts/run_migrations.py
+```
+
+## Running the Application
+
+Start the FastAPI server with uvicorn:
 
 ```bash
-# Preview what would be deleted (safe)
-python scripts/clear_data.py --uri "mongodb://localhost:27017" --db jobapp --dry-run
-
-# Delete all data (with confirmation prompt)
-python scripts/clear_data.py --uri "mongodb://localhost:27017" --db jobapp
-
-# Delete without prompting
-python scripts/clear_data.py --uri "mongodb://localhost:27017" --db jobapp --force
+uvicorn app.main:app --reload --port 8000
 ```
 
-### List Unused Collections — `scripts/list_unused_collections.py`
+The API will be available at `http://localhost:8000`.
 
-Shows which MongoDB collections are referenced by the application vs. which are safe to drop. Helpful before running cleanup migrations.
+## API Documentation
+
+Once the server is running:
+
+| Docs | URL |
+|---|---|
+| Swagger UI | `http://localhost:8000/docs` |
+| ReDoc | `http://localhost:8000/redoc` |
+| Health Check | `http://localhost:8000/health` |
+
+### Available Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/jobs/search` | Search jobs via agents (plain-text query) |
+| `GET` | `/api/v1/jobs/jobs` | List stored jobs with filters/pagination |
+| `GET` | `/api/v1/jobs/jobs/{job_id}` | Get job detail with resume/tailoring lifecycle |
+| `POST` | `/api/v1/resumes/upload` | Upload and parse a resume (PDF/DOCX) |
+| `POST` | `/api/v1/resumes/tailor-structured` | Tailor resume against a job (PII-safe) |
+| `POST` | `/api/v1/resumes/download-from-url` | Proxy-download a Cloudinary file |
+| `GET` | `/health` | Health check |
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `MONGODB_URI` | **Yes** | `mongodb://localhost:27017/jobapp` | MongoDB connection string |
+| `LLM_PROVIDER` | No | `ollama` | LLM backend: `ollama`, `openrouter`, `groq`, `cerebras`, `sambanova`, `nvidia`, `multi` |
+| `OPENROUTER_API_KEY` | Conditional | — | Required if using OpenRouter provider |
+| `GROQ_API_KEY` | Conditional | — | Required if using Groq provider |
+| `CLOUDINARY_CLOUD_NAME` | Conditional | — | Required for resume file storage |
+| `CLOUDINARY_API_KEY` | Conditional | — | Required for resume file storage |
+| `CLOUDINARY_API_SECRET` | Conditional | — | Required for resume file storage |
+| `SEARXNG_URL` | No | `http://localhost:8888` | SearXNG instance URL |
+| `LINKEDIN_GUEST_API_ENABLED` | No | `false` | Enable LinkedIn Guest API search source |
+| `SEARXNG_ENABLED` | No | `false` | Enable SearXNG search source |
+| `LOG_LEVEL` | No | `INFO` | Logging level |
+
+See `.env.example` for the full list of all configurable options and provider-specific variables.
+
+## Testing
 
 ```bash
-python scripts/list_unused_collections.py --uri "mongodb://localhost:27017" --db jobapp
+# Run unit tests
+pytest tests/
+
+# Run integration tests
+python test/test_integration.py
 ```
 
-### Generate Test Data — `scripts/generate_test_data.py`
+Current test coverage: `test_db_service.py` covers `save_jobs` behavior (deduplication, timestamp injection, empty-list handling). Resume endpoints have no dedicated tests yet.
 
-Populates the database with sample job listings for development and testing.
+## Docker Setup
+
+The `services/docker-compose.yml` starts supporting infrastructure:
 
 ```bash
-python scripts/generate_test_data.py --uri "mongodb://localhost:27017" --db jobapp
+cd services
+docker-compose up -d
 ```
+
+| Service | Port | Purpose |
+|---|---|---|
+| SearXNG | `8888` | Meta-search engine for job aggregation |
+| Camofox | `9500` | Headless browser service for scraping |
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | FastAPI |
+| Runtime | Python 3.11+ / Uvicorn |
+| Database | MongoDB (via Motor async driver) |
+| Agent Orchestration | LangGraph |
+| LLM Providers | Ollama, Groq, Cerebras, SambaNova, NVIDIA NIM, OpenRouter |
+| File Storage | Cloudinary |
+| Document Processing | PyMuPDF, ReportLab, python-docx, mammoth, htmldocx, weasyprint / pdfkit |
+| PDF/HTML | BeautifulSoup4, htmldocx, Playwright |
+
+## Contributing
+
+1. Read `docs/AGENTS.md` for the documentation-first development workflow.
+2. Check `docs/INDEX.md` before creating any new documentation.
+3. Follow the existing code style (async/await, type hints, Pydantic models for all I/O).
+4. Run existing tests before submitting changes.
+5. Update the corresponding doc file when modifying a feature — a pre-commit hook enforces this.
+
+## License
+
+MIT
