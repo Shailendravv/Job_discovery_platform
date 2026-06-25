@@ -11,12 +11,18 @@ Pipeline:
         ├── Remove Certifications (factual — preserved as-is)
         │
         ▼
-    If payload is large (>8K chars):
-        Split into 2-3 chunks
-        Call LLM once per chunk
-        Merge results
-    Else:
-        Call LLM once
+    Try single LLM call with FULL payload
+        │
+        ├── Success → done
+        │
+        └── Failure (rate-limit 429):
+                ├── Retry after 10s
+                ├── Retry after 20s
+                ├── Retry after 30s
+                └── Still failing → fall back to chunked approach
+                    Split into 2-3 chunks
+                    Call LLM once per chunk
+                    Merge results
         │
         ▼
     Re-inject Education + Certifications + PII
@@ -25,11 +31,12 @@ Pipeline:
     Generate Final HTML → DOCX / PDF
 
 Uses OpenRouter free-tier models with automatic fallback chain.
-Maximum 3 LLM calls (not 20+ like the old section-by-section approach).
+Maximum 1 LLM call in the happy path; up to 4+ in worst case (1 single + 3 chunks).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -44,6 +51,13 @@ log = logging.getLogger(__name__)
 # If the editable JSON payload exceeds this, split into chunks.
 # Each chunk gets its own LLM call with full JD context.
 _MAX_CHUNK_CHARS = 8000
+
+# ── Retry Configuration ────────────────────────────────────────────
+# When the single-call approach hits a rate-limit (429), retry
+# with increasing delays before falling through to chunking.
+# Delays: 1st retry=10s, 2nd=20s, 3rd=30s
+_RETRY_DELAYS = [10, 20, 30]
+_MAX_RETRIES = len(_RETRY_DELAYS)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -60,7 +74,7 @@ Your task is to tailor a resume for a specific job description while maintaining
 
 1. Never invent experience that does not exist.
 2. Never create fake companies.
-3. Never create fake projects.
+3. **Never create fake projects.** Only include projects explicitly present in the original resume data. Do not invent project names, even if they sound plausible given the candidate's domain expertise. If the original has N projects, the tailored version must also have exactly N projects — not fewer, not more.
 4. Never create fake certifications.
 5. Never create fake education.
 6. Never fabricate years of experience.
@@ -68,6 +82,13 @@ Your task is to tailor a resume for a specific job description while maintaining
 8. Preserve all factual information.
 9. Improve wording, impact, ATS compatibility, and keyword alignment.
 10. Optimize for ATS parsing.
+11. **Never copy text from the Job Description into the Professional Summary.** The summary must only rephrase the candidate's actual experience and skills. Do not inject JD phrasing, responsibilities, or requirements into the summary.
+12. **Every claim in the Professional Summary must be verifiable** from the candidate's experience, skills, or projects sections below. Do not make claims that cannot be traced back to the candidate's own resume data.
+13. **Preserve the original format and structure of each section.** Do not convert paragraphs to bullet points, bullet points to paragraphs, or change the overall structure of any section.
+    *Exception: The Skills section may be regrouped and reordered by category as specified in the Skills Section instructions below.*
+14. **Do not expand content beyond what is present in the original resume.** Rephrase and reword existing content only. Do not add new sentences, claims, achievements, details, technologies, or metrics that were not in the original resume data. **Crucially, do not copy content from the Experience or Projects sections into the Professional Summary.** The Summary should only rephrase what was already in the original summary — it should not become a digest of the entire resume.
+15. **Do not add new sub-headings, category labels, duration summaries, or meta-descriptions** to any section that were not present in the original resume.
+16. **Never add contact information (LinkedIn URLs, GitHub URLs, personal websites, portfolio links, or any social media profiles)** that were not present in the original resume. Only include contact details explicitly present in the resume data.
 
 ---
 
@@ -113,13 +134,28 @@ Then optimize the resume to improve alignment.
 
 You may:
 
-* Rewrite summary
-* Add relevant keywords
-* Improve ATS matching
+* Rewrite the summary to improve flow, clarity, and impact
+* Emphasize existing skills and domain expertise that align with the job
+* Rephrase the candidate's own achievements more effectively
 
-IMPORTANT: Preserve the original summary's length, detail, and context.
-Do NOT shorten it. Maintain all specifics about years of experience,
-technologies, domain expertise, and key achievements.
+CRITICAL — Anti-Copying & Format Preservation:
+
+* **Do NOT copy any text from the Job Description into the summary.**
+* **Do NOT inject keywords just for ATS scoring.** The summary must reflect ONLY the candidate's actual profile, reworded for maximum impact.
+* **Preserve the original summary's format EXACTLY.**
+  - If the original is a single paragraph → output a single paragraph.
+  - If the original has bullet points → keep bullet points.
+  - Do NOT add bullet points to a paragraph-formatted summary.
+  - Do NOT extract part of the summary as a separate heading or title line.
+* **Do NOT add new claims, facts, or details** that are not explicitly present in the original summary text. Only rephrase what is already there.
+* **Every claim must be directly quoted or closely paraphrased** from the experience, skills, or projects sections of the resume. If a capability is not present in the candidate's resume data, it must not appear in the summary.
+* The summary should sound like a genuine human-written professional profile — not a keyword-stuffed ATS target.
+
+IMPORTANT: Preserve the original summary's length, detail, context, and paragraph structure.
+Do NOT shorten it. Do NOT expand it with new content. Maintain all specifics about years of experience,
+technologies, domain expertise, and key achievements exactly as stated.
+
+ATS keyword alignment should be handled in the Skills and Experience sections below, not injected into the Professional Summary.
 
 ---
 
@@ -141,18 +177,25 @@ IMPORTANT: Output ALL skills in this exact grouped order within the skills array
 
 You may only include skills already present in the resume.
 
+**Do NOT infer or assume the candidate knows a technology** because it seems related to their expertise. For example, if the resume only mentions AWS, do not add GCP or Azure. If the resume mentions React.js, do not assume Vue.js or Angular.
+
 ---
 
 ### Experience Section
 
 You may:
 
-* Rewrite bullet points
+* Rewrite bullet points for better clarity and impact
 * Improve action verbs
-* Quantify achievements when existing metrics are available
+* Quantify achievements when existing metrics are available (do NOT invent metrics)
 * Highlight relevant technologies already used
 
-You must not add technologies that are absent from the candidate's experience.
+CRITICAL:
+* **Preserve the original structure** — do not add new sub-headings, category labels, duration summaries, or meta-descriptions that were not present in the original.
+* **Preserve the original description format.** If the original description is a paragraph → keep it as a paragraph. If it uses bullet points → keep bullet points. Do NOT convert between formats.
+* **Do not expand the description** beyond the original level of detail. Only rephrase existing content.
+* You must not add technologies that are absent from the candidate's experience.
+* Do not add new bullet points or achievements that were not in the original.
 
 ---
 
@@ -160,11 +203,16 @@ You must not add technologies that are absent from the candidate's experience.
 
 You may:
 
-* Rewrite descriptions
-* Emphasize relevant technologies
-* Improve ATS keyword matching
+* Rewrite descriptions for better clarity
+* Emphasize relevant technologies already mentioned
+* Improve ATS keyword matching using only technologies already present in the description
 
-Do not invent projects.
+CRITICAL — No Fabrication:
+
+* **Do not invent projects** — this is already forbidden by Critical Rule #3.
+* **Do NOT expand project descriptions** with new details, technologies, features, or outcomes that were not present in the original. Rewording only.
+* **Preserve the original description length and level of detail.** If the original was 1-2 sentences, the tailored version must also be 1-2 sentences.
+* **Do not add new sections** like "Project Name", "Project Description", or "Technologies Used" labels that were not in the original structure.
 
 ---
 
@@ -179,16 +227,22 @@ Not sent to LLM — these factual sections are preserved exactly server-side and
 Target:
 
 * ATS Friendly
-* Keyword Rich
-* Human Readable
+* Keyword Rich (in Skills and Experience sections only)
+* Human Readable (especially the Professional Summary)
 * Professional Tone
 
 Priority:
 
-1. Required Skills
-2. Responsibilities
-3. Industry Keywords
-4. Preferred Skills
+1. Required Skills (align in Skills section)
+2. Responsibilities (reflect in Experience bullet points)
+3. Industry Keywords (integrate naturally only if already implied by existing content)
+4. Preferred Skills (secondary alignment in Skills section)
+
+ATS alignment priority by section:
+- **Professional Summary:** Do NOT optimize for keywords. Focus on readability and authenticity. No new content.
+- **Skills:** Reorder and group skills to prioritize JD-matching ones.
+- **Experience:** Incorporate relevant keywords naturally into existing bullet points. Do not add new bullets.
+- **Projects:** Do NOT add new technologies or features. Only rephrase existing content with better wording.
 
 ---
 
@@ -755,8 +809,185 @@ def _chunk_editable(editable: dict) -> list[dict]:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Core: call LLM for one chunk
+#  Data Integrity: merge missing entries back from original
 # ═══════════════════════════════════════════════════════════════
+
+
+def _merge_missing_entries(parsed: dict, original: dict) -> dict:
+    """
+    Ensure all entries from the original data survive the LLM response.
+
+    The LLM may drop projects, experience entries, or skills to stay within
+    output token limits. This function detects omissions by comparing the
+    returned data against the original and merges back any missing entries.
+
+    Matching strategy per field:
+      - projects:    match by project name
+      - experience:  match by (company, title) tuple
+      - skills:      match by string value
+      - summary:     keep whichever is non-empty
+
+    Args:
+        parsed: LLM-returned data (may have fewer items than original).
+        original: Original resume data (the ground truth).
+
+    Returns:
+        Dict with merged data (all original items preserved).
+    """
+    merged = dict(parsed)
+
+    # ── Projects (match by name) ──
+    orig_projects: list[dict] = original.get("projects", []) or []
+    ret_projects: list[dict] = merged.get("projects", []) or []
+    if orig_projects:
+        ret_names = {p.get("name", "") for p in ret_projects}
+        missing = [p for p in orig_projects if p.get("name", "") not in ret_names]
+        if missing:
+            log.warning(
+                "LLM dropped %d/%d project(s) — merging back: %s",
+                len(missing), len(orig_projects),
+                [p.get("name", "") for p in missing],
+            )
+            merged["projects"] = ret_projects + missing
+
+    # ── Experience (match by company + title) ──
+    orig_exp: list[dict] = original.get("experience", []) or []
+    ret_exp: list[dict] = merged.get("experience", []) or []
+    if orig_exp:
+        ret_keys = {(e.get("company", ""), e.get("title", "")) for e in ret_exp}
+        missing = [
+            e for e in orig_exp
+            if (e.get("company", ""), e.get("title", "")) not in ret_keys
+        ]
+        if missing:
+            log.warning(
+                "LLM dropped %d/%d experience entr(ies) — merging back",
+                len(missing), len(orig_exp),
+            )
+            merged["experience"] = ret_exp + missing
+
+    # ── Skills (match by exact string) ──
+    orig_skills: list[str] = original.get("skills", []) or []
+    ret_skills: list[str] = merged.get("skills", []) or []
+    if orig_skills:
+        ret_set = set(ret_skills)
+        missing = [s for s in orig_skills if s not in ret_set]
+        if missing:
+            log.warning(
+                "LLM dropped %d/%d skill(s) — merging back",
+                len(missing), len(orig_skills),
+            )
+            merged["skills"] = ret_skills + missing
+
+    return merged
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Core: call LLM with retry (single-call-first strategy)
+# ═══════════════════════════════════════════════════════════════
+
+
+async def _try_single_with_retry(
+    editable: dict,
+    job_title: str,
+    job_description: str,
+    job_skills: list[str],
+) -> dict | None:
+    """
+    Try to process the FULL editable payload in a single LLM call.
+
+    Strategy:
+      1. First attempt goes through MultiProvider's chain
+         (groq \u2192 cerebras \u2192 sambanova \u2192 nvidia \u2192 openrouter)
+      2. On rate-limit failure, retry with increasing delays
+         (10s, 20s, 30s) \u2014 a brief pause often resolves free-tier caps
+      3. On other failures, the MultiProvider already exhausted all
+         providers \u2014 skip retry and return None for chunking fallback
+      4. Returns None if all attempts are exhausted \u2014 chunking kicks in
+
+    Returns:
+        Parsed dict (with summary/skills/experience/projects + metadata),
+        or None if all retries failed.
+    """
+    for attempt in range(_MAX_RETRIES + 1):
+        if attempt > 0:
+            delay = _RETRY_DELAYS[attempt - 1]
+            log.info(
+                "Single call retry %d/%d \u2014 waiting %ds before retry...",
+                attempt, _MAX_RETRIES, delay,
+            )
+            await asyncio.sleep(delay)
+
+        resume_json_str = json.dumps(editable, ensure_ascii=False, indent=2)
+        full_system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
+            resume_json=resume_json_str,
+            job_description=job_description,
+        )
+
+        user_prompt = (
+            f"Please tailor this resume for the following position.\n\n"
+            f"Job Title: {job_title}\n"
+            f"Skills: {', '.join(job_skills) if job_skills else 'N/A'}"
+        )
+
+        llm = get_llm_provider()
+        log.info(
+            "Calling LLM (single call, attempt %d/%d, %d chars)...",
+            attempt + 1, _MAX_RETRIES + 1, len(resume_json_str),
+        )
+
+        result = await llm.generate_async(
+            prompt=user_prompt,
+            json_format=True,
+            timeout=180,
+            max_tokens=16384,
+            system_prompt=full_system_prompt,
+        )
+
+        if result.failure_reason:
+            log.warning(
+                "LLM call failed (attempt %d/%d): %s",
+                attempt + 1, _MAX_RETRIES + 1, result.failure_reason,
+            )
+            # Only retry on rate-limit errors
+            if "rate limit" in result.failure_reason.lower() or "429" in result.failure_reason:
+                continue  # Will sleep and retry on next loop iteration
+            # Other errors: MultiProvider already tried all providers
+            log.info("Non-rate-limit failure \u2014 skipping retry, falling back to chunking")
+            return None
+
+        raw_content = result.content
+        try:
+            parsed = json.loads(raw_content)
+        except json.JSONDecodeError as e:
+            log.warning("JSON parse failed (attempt %d/%d): %s", attempt + 1, _MAX_RETRIES + 1, e)
+            return None
+
+        # Ensure no projects/experience/skills were dropped by the LLM
+        merged = _merge_missing_entries(parsed, editable)
+
+        # Success
+        log.info(
+            "Single LLM call succeeded on attempt %d/%d (model=%s)",
+            attempt + 1, _MAX_RETRIES + 1, result.model or "unknown",
+        )
+        return {
+            "summary": merged.get("summary", editable.get("summary", "")),
+            "skills": merged.get("skills", editable.get("skills", [])),
+            "experience": merged.get("experience", editable.get("experience", [])),
+            "projects": merged.get("projects", editable.get("projects", [])),
+            "_model": result.model or "unknown",
+            "_ats_keywords_matched": parsed.get("ats_keywords_matched", []),
+            "_ats_keywords_missing": parsed.get("ats_keywords_missing", []),
+            "_optimization_notes": parsed.get("optimization_notes", []),
+        }
+
+    # All retries exhausted
+    log.warning(
+        "Single call failed after %d retries \u2014 falling back to chunked approach",
+        _MAX_RETRIES,
+    )
+    return None
 
 
 def _merge_chunks_results(chunks: list[dict], results: list[dict]) -> dict:
@@ -872,7 +1103,7 @@ async def _call_llm_for_chunk(
         prompt=user_prompt,
         json_format=True,
         timeout=180,
-        max_tokens=8192,
+        max_tokens=16384,
         system_prompt=full_system_prompt,
     )
 
@@ -890,12 +1121,15 @@ async def _call_llm_for_chunk(
         log.warning("Chunk %d/%d JSON parse failed: %s", chunk_index + 1, total_chunks, e)
         return None
 
-    # Normalize: extract only the editable keys
+    # Ensure no projects/experience/skills were dropped by the LLM in this chunk
+    merged = _merge_missing_entries(parsed, chunk)
+
+    # Normalize: extract only the editable keys (with integrity merge from _merge_missing_entries)
     return {
-        "summary": parsed.get("summary", chunk.get("summary", "")),
-        "skills": parsed.get("skills", chunk.get("skills", [])),
-        "experience": parsed.get("experience", chunk.get("experience", [])),
-        "projects": parsed.get("projects", chunk.get("projects", [])),
+        "summary": merged.get("summary", chunk.get("summary", "")),
+        "skills": merged.get("skills", chunk.get("skills", [])),
+        "experience": merged.get("experience", chunk.get("experience", [])),
+        "projects": merged.get("projects", chunk.get("projects", [])),
         "_model": result.model or "unknown",
         "_ats_keywords_matched": parsed.get("ats_keywords_matched", []),
         "_ats_keywords_missing": parsed.get("ats_keywords_missing", []),
@@ -1126,15 +1360,17 @@ async def tailor_resume_structured(
         1. Extract PII (name, email, phone) — NEVER sent to LLM
         2. Separate editable fields (summary, skills, experience, projects)
            from preserved fields (education, certifications)
-        3. If editable payload is large: split into 2-3 chunks,
-           call LLM once per chunk, merge results
-        4. If editable payload is small: call LLM once
+        3. Try single LLM call with FULL editable payload
+           — On rate-limit (429): retry with 10s, 20s, 30s delays
+           — On other failure: fall through to chunking
+        4. If single call fails after retries: split into 2-3 chunks
+           and call LLM once per chunk, merge results
         5. Re-inject preserved fields (education, certifications)
         6. Re-inject PII
         7. Generate HTML
         8. Return everything for API response + file generation
 
-    Maximum 3 LLM calls (not 20+ like the old section-by-section approach).
+    Maximum 1 LLM call in the happy path; up to 4+ in worst case (1 + 3 chunks).
 
     Args:
         resume_text: Raw extracted text.
@@ -1172,99 +1408,103 @@ async def tailor_resume_structured(
         len(preserved.get("certifications", [])),
     )
 
-    # ── Step 3: Chunk and call LLM ──
-    chunks = _chunk_editable(editable)
-    n_chunks = len(chunks)
+    # ── Step 3: Try single LLM call with retry ──
+    single_result = await _try_single_with_retry(
+        editable, job_title, job_description, job_skills,
+    )
 
-    if n_chunks == 1:
-        # ── Single call ──
-        result = await _call_llm_for_chunk(
-            chunks[0], job_title, job_description, job_skills,
-            chunk_index=0, total_chunks=1,
-        )
-        if result is None:
+    if single_result is not None:
+        # Single call succeeded
+        merged_editable = {k: v for k, v in single_result.items() if not k.startswith("_")}
+        ats_matched = single_result.get("_ats_keywords_matched", []) or []
+        ats_missing = single_result.get("_ats_keywords_missing", []) or []
+        opt_notes = single_result.get("_optimization_notes", []) or []
+        llm_model = single_result.get("_model", "unknown")
+        n_chunks = 1
+
+    else:
+        # ── Single call failed — fall back to chunked approach ──
+        log.info("Single LLM call failed — falling back to chunked approach")
+        chunks = _chunk_editable(editable)
+        n_chunks = len(chunks)
+
+        if n_chunks == 1:
+            # Payload fits in one chunk but LLM still failed — use original data
             merged_editable = editable
             ats_matched = []
             ats_missing = []
-            opt_notes = ["LLM call failed — using original resume data"]
+            opt_notes = ["LLM call failed after retries — using original resume data"]
             llm_model = "unknown"
+
         else:
-            merged_editable = {k: v for k, v in result.items() if not k.startswith("_")}
-            ats_matched = result.get("_ats_keywords_matched", []) or []
-            ats_missing = result.get("_ats_keywords_missing", []) or []
-            opt_notes = result.get("_optimization_notes", []) or []
-            llm_model = result.get("_model", "unknown")
+            # ── Multi-chunk: call LLM per chunk (each is smaller, more likely to succeed) ──
+            chunk_results: list[dict | None] = []
+            for i, chunk in enumerate(chunks):
+                chunk_result = await _call_llm_for_chunk(
+                    chunk, job_title, job_description, job_skills,
+                    chunk_index=i, total_chunks=n_chunks,
+                )
+                chunk_results.append(chunk_result)
 
-    else:
-        # ── Multi-chunk: call LLM per chunk ──
-        chunk_results: list[dict | None] = []
-        for i, chunk in enumerate(chunks):
-            chunk_result = await _call_llm_for_chunk(
-                chunk, job_title, job_description, job_skills,
-                chunk_index=i, total_chunks=n_chunks,
-            )
-            chunk_results.append(chunk_result)
+            # Filter out failed chunks (use original chunk data as fallback)
+            valid_results: list[dict] = []
+            valid_chunks: list[dict] = []
+            for i, (chunk, result) in enumerate(zip(chunks, chunk_results)):
+                if result is not None:
+                    valid_results.append(result)
+                    valid_chunks.append(chunk)
+                else:
+                    valid_results.append({
+                        "summary": chunk.get("summary", ""),
+                        "skills": chunk.get("skills", []),
+                        "experience": chunk.get("experience", []),
+                        "projects": chunk.get("projects", []),
+                    })
+                    valid_chunks.append(chunk)
+                log.info(
+                    "Chunk %d/%d: %s",
+                    i + 1, n_chunks,
+                    "LLM OK" if chunk_results[i] is not None else "LLM FAILED (using original)",
+                )
 
-        # Filter out failed chunks (use original chunk data as fallback)
-        valid_results: list[dict] = []
-        valid_chunks: list[dict] = []
-        for i, (chunk, result) in enumerate(zip(chunks, chunk_results)):
-            if result is not None:
-                valid_results.append(result)
-                valid_chunks.append(chunk)
-            else:
-                # Fall back to original chunk data
-                valid_results.append({
-                    "summary": chunk.get("summary", ""),
-                    "skills": chunk.get("skills", []),
-                    "experience": chunk.get("experience", []),
-                    "projects": chunk.get("projects", []),
-                })
-                valid_chunks.append(chunk)
-            log.info(
-                "Chunk %d/%d: %s",
-                i + 1, n_chunks,
-                "LLM OK" if chunk_results[i] is not None else "LLM FAILED (using original)",
-            )
+            # Merge all chunk results
+            merged_editable = _merge_chunks_results(valid_chunks, valid_results)
 
-        # Merge all chunk results
-        merged_editable = _merge_chunks_results(valid_chunks, valid_results)
+            # Collect ATS metadata from all chunks
+            all_matched: list[str] = []
+            all_missing: list[str] = []
+            all_notes: list[str] = [f"Resume tailored in {n_chunks} chunks (single call failed first)"]
+            seen_matched: set[str] = set()
+            seen_missing: set[str] = set()
 
-        # Collect ATS metadata from all chunks
-        all_matched: list[str] = []
-        all_missing: list[str] = []
-        all_notes: list[str] = [f"Resume tailored in {n_chunks} chunks"]
-        seen_matched: set[str] = set()
-        seen_missing: set[str] = set()
+            for r in chunk_results:
+                if r is None:
+                    continue
+                for kw in r.get("_ats_keywords_matched", []):
+                    if kw not in seen_matched:
+                        all_matched.append(kw)
+                        seen_matched.add(kw)
+                for kw in r.get("_ats_keywords_missing", []):
+                    if kw not in seen_missing:
+                        all_missing.append(kw)
+                        seen_missing.add(kw)
+                for note in r.get("_optimization_notes", []):
+                    if note not in all_notes:
+                        all_notes.append(note)
 
-        for r in chunk_results:
-            if r is None:
-                continue
-            for kw in r.get("_ats_keywords_matched", []):
-                if kw not in seen_matched:
-                    all_matched.append(kw)
-                    seen_matched.add(kw)
-            for kw in r.get("_ats_keywords_missing", []):
-                if kw not in seen_missing:
-                    all_missing.append(kw)
-                    seen_missing.add(kw)
-            for note in r.get("_optimization_notes", []):
-                if note not in all_notes:
-                    all_notes.append(note)
+            ats_matched = all_matched
+            ats_missing = all_missing
+            opt_notes = all_notes
+            failed_chunks = sum(1 for r in chunk_results if r is None)
+            if failed_chunks:
+                opt_notes.append(f"{failed_chunks} chunk(s) fell back to original content")
 
-        ats_matched = all_matched
-        ats_missing = all_missing
-        opt_notes = all_notes
-        failed_chunks = sum(1 for r in chunk_results if r is None)
-        if failed_chunks:
-            opt_notes.append(f"{failed_chunks} chunk(s) fell back to original content")
-
-        # Use model from first successful chunk
-        llm_model = "unknown"
-        for r in chunk_results:
-            if r is not None and r.get("_model", "unknown") != "unknown":
-                llm_model = r["_model"]
-                break
+            # Use model from first successful chunk
+            llm_model = "unknown"
+            for r in chunk_results:
+                if r is not None and r.get("_model", "unknown") != "unknown":
+                    llm_model = r["_model"]
+                    break
 
     # ── Step 4: Build full data (editable + preserved + PII) ──
     full_data = {}
