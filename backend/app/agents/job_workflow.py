@@ -347,18 +347,22 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
     # ATS jobs have higher data quality (no LLM extraction artifacts).
     # Filtered by relevance to user_input, then deduplicated against SearXNG URLs.
     ats_jobs: List[dict] = []
-    try:
-        raw_ats_jobs = await scan_ats_companies(user_input=user_input)
-        log.info("[workflow] ats raw results: %d", len(raw_ats_jobs))
-        # Dedup ATS jobs against SearXNG URLs (ATS data higher quality)
-        for job in raw_ats_jobs:
-            url = job.get("url") or ""
-            if url and url not in searxng_seen_urls:
-                searxng_seen_urls.add(url)  # reserve the URL so SearXNG dedup skips it too
-                ats_jobs.append(job)
-        log.info("[workflow] ats unique after dedup: %d", len(ats_jobs))
-    except Exception as e:
-        log.warning("[workflow] ats phase failed: %s", e, exc_info=True)
+    log.info("[workflow] ATS_ENABLED=%r", settings.ATS_ENABLED)
+    if settings.ATS_ENABLED:
+        try:
+            raw_ats_jobs = await scan_ats_companies(user_input=user_input)
+            log.info("[workflow] ats raw results: %d", len(raw_ats_jobs))
+            # Dedup ATS jobs against SearXNG URLs (ATS data higher quality)
+            for job in raw_ats_jobs:
+                url = job.get("url") or ""
+                if url and url not in searxng_seen_urls:
+                    searxng_seen_urls.add(url)  # reserve the URL so SearXNG dedup skips it too
+                    ats_jobs.append(job)
+            log.info("[workflow] ats unique after dedup: %d", len(ats_jobs))
+        except Exception as e:
+            log.warning("[workflow] ats phase failed: %s", e, exc_info=True)
+    else:
+        log.info("[workflow] ats phase disabled via config")
 
     # ── Phase 1b: LinkedIn — called ONCE with its own quota ───────────────────
     log.info("[workflow] LINKEDIN_GUEST_API_ENABLED=%r", settings.LINKEDIN_GUEST_API_ENABLED)

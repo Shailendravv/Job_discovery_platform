@@ -125,3 +125,54 @@ ats_companies:
   # ===========================
   - name: Superside
     careers_url: https://jobs.lever.co/superside
+
+  - name: Spotify
+    careers_url: https://jobs.lever.co/spotify
+
+  - name: Kochava
+    careers_url: https://jobs.lever.co/kochava
+
+  # ===========================
+  # GREENHOUSE (200 OK)
+  # ===========================
+  - name: GitLab
+    careers_url: https://boards.greenhouse.io/gitlab
+
+  - name: Stripe
+    careers_url: https://boards.greenhouse.io/stripe
+
+  - name: Datadog
+    careers_url: https://boards.greenhouse.io/datadog
+
+  - name: Airbnb
+    careers_url: https://boards.greenhouse.io/airbnb
+
+  - name: Asana
+    careers_url: https://boards.greenhouse.io/asana
+
+  - name: Figma
+    careers_url: https://boards.greenhouse.io/figma
+
+  - name: Reddit
+    careers_url: https://boards.greenhouse.io/reddit
+
+  - name: Vercel
+    careers_url: https://boards.greenhouse.io/vercel
+
+  - name: Amplitude
+    careers_url: https://boards.greenhouse.io/amplitude
+
+  - name: Glossier
+    careers_url: https://boards.greenhouse.io/glossier
+
+  - name: Betterment
+    careers_url: https://boards.greenhouse.io/betterment
+
+  - name: Brex
+    careers_url: https://boards.greenhouse.io/brex
+
+  - name: Robinhood
+    careers_url: https://boards.greenhouse.io/robinhood
+
+  - name: Lyft
+    careers_url: https://boards.greenhouse.io/lyft

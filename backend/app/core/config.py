@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     SEARCH_MAX_RESULTS: int = 15
     BROWSE_TOP_N: int = 30
     LINKEDIN_MAX_RESULTS: int = 15
-    SEARCH_SITES: str = "greenhouse.io,lever.co,myworkdayjobs.com"
+    SEARCH_SITES: str = "naukri.com,linkedin.com/jobs,indeed.com"
     SEARCH_FRESH: bool = True
     SEARCH_CAREERS: bool = False
     SETTLE_SECONDS: float = 1.5
@@ -66,8 +66,11 @@ class Settings(BaseSettings):
     # SearXNG toggle
     SEARXNG_ENABLED: bool = False  # Set to True to enable SearXNG search results
 
+    # ATS direct API toggle
+    ATS_ENABLED: bool = True  # Set to False to disable ATS provider fetching
+
     # LinkedIn Guest API settings
-    LINKEDIN_GUEST_API_ENABLED: bool
+    LINKEDIN_GUEST_API_ENABLED: bool = False
     LINKEDIN_GUEST_API_LOCATION: str = "India"
     LINKEDIN_GUEST_API_TIME_RANGE: str = "r86400"  # Past 24 hours
     LINKEDIN_GUEST_API_MAX_RESULTS: int = 15  # Independent cap for LinkedIn results
