@@ -13,8 +13,9 @@ from typing import List
 from app.agents.tools.skill_extraction import extract_skills_from_text
 from app.agents.tools.browse_jobs import browse_extract
 from app.agents.search_provider import provider
+from app.agents.ats_workflow import scan_ats_companies
 from app.core.config import settings
-from app.core.llm import call_llm
+from app.core.llm import call_llm_async
 from app.models.job import JobResult
 
 log = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ def _build_queries(parsed: dict) -> List[str]:
         queries.append(f"{base} site:{site}")
     return queries
 
-def _build_queries_dynamic(user_input: str) -> List[str]:
+async def _build_queries_dynamic(user_input: str) -> List[str]:
     """Uses LLM to dynamically generate SearXNG queries targeting ATS platforms."""
     log.info("[workflow] Dynamically building search queries using LLM")
     sites_str = ", ".join(settings.search_sites_list)
@@ -118,7 +119,7 @@ def _build_queries_dynamic(user_input: str) -> List[str]:
     )
     
     try:
-        raw = call_llm(prompt, json_format=True, timeout=30)
+        raw = await call_llm_async(prompt, json_format=True, timeout=30)
         import re
         # try to parse just the array
         raw = re.sub(r"^```(?:json)?\s*", "", raw).strip()
@@ -153,7 +154,7 @@ def _rank_and_trim(results: List[dict], query: str, top_n: int) -> List[dict]:
     return scored[:top_n]
 
 
-def _rank_and_trim_dynamic(results: List[dict], query: str, top_n: int) -> List[dict]:
+async def _rank_and_trim_dynamic(results: List[dict], query: str, top_n: int) -> List[dict]:
     """Score every result against the base query using LLM, return top_n."""
     if not results:
         return []
@@ -180,7 +181,7 @@ def _rank_and_trim_dynamic(results: List[dict], query: str, top_n: int) -> List[
     )
     
     try:
-        raw = call_llm(prompt, json_format=True, timeout=60)
+        raw = await call_llm_async(prompt, json_format=True, timeout=60)
         import re
         raw = re.sub(r"^```(?:json)?\s*", "", raw).strip()
         raw = re.sub(r"\s*```$", "", raw).strip()
@@ -306,8 +307,10 @@ def _browse_and_build(candidates: List[dict], quota: int, label: str, final_seen
             continue
 
         log.info("[workflow][%s][%d] job_type=%r title=%r", label, idx + 1, job_dict["job_type"], job_dict["title"])
+        # Debug print — use ensure_ascii=True to avoid UnicodeEncodeError
+        # on Windows terminals (cp1252) that can't encode chars like ₹
         print(f"\n{'='*60}\n[{label.upper()} JOB {len(jobs)+1}/{quota}]")
-        print(json.dumps(job_dict, indent=2, ensure_ascii=False))
+        print(json.dumps(job_dict, indent=2, ensure_ascii=True))
         print("=" * 60)
         jobs.append(job_dict)
 
@@ -318,7 +321,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
     """Entry point called by the API. Accepts plain-text user query only."""
     log.info("[workflow] starting dynamic search for: %s", user_input)
 
-    queries = _build_queries_dynamic(user_input)
+    queries = await _build_queries_dynamic(user_input)
     log.info("[workflow] will run %d queries: %s", len(queries), queries)
 
     searxng_quota = settings.SEARCH_MAX_RESULTS   # e.g. 15 final jobs from SearXNG
@@ -337,7 +340,25 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
             log.info("[workflow] searxng query=%r → %d raw results", q, len(batch))
             searxng_candidates.extend(_collect_unique_urls_only(batch, searxng_seen_urls))
         log.info("[workflow] searxng unique candidates: %d", len(searxng_candidates))
-        searxng_candidates = _rank_and_trim_dynamic(searxng_candidates, user_input, searxng_quota * 2)
+        searxng_candidates = await _rank_and_trim_dynamic(searxng_candidates, user_input, searxng_quota * 2)
+
+    # ── Phase 1c (NEW): ATS direct API fetch (zero-LLM) ───────────────────────
+    # Fetches jobs directly from ATS APIs for configured companies.
+    # ATS jobs have higher data quality (no LLM extraction artifacts).
+    # Filtered by relevance to user_input, then deduplicated against SearXNG URLs.
+    ats_jobs: List[dict] = []
+    try:
+        raw_ats_jobs = await scan_ats_companies(user_input=user_input)
+        log.info("[workflow] ats raw results: %d", len(raw_ats_jobs))
+        # Dedup ATS jobs against SearXNG URLs (ATS data higher quality)
+        for job in raw_ats_jobs:
+            url = job.get("url") or ""
+            if url and url not in searxng_seen_urls:
+                searxng_seen_urls.add(url)  # reserve the URL so SearXNG dedup skips it too
+                ats_jobs.append(job)
+        log.info("[workflow] ats unique after dedup: %d", len(ats_jobs))
+    except Exception as e:
+        log.warning("[workflow] ats phase failed: %s", e, exc_info=True)
 
     # ── Phase 1b: LinkedIn — called ONCE with its own quota ───────────────────
     log.info("[workflow] LINKEDIN_GUEST_API_ENABLED=%r", settings.LINKEDIN_GUEST_API_ENABLED)
@@ -349,7 +370,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
             unique = _collect_unique_urls_only(batch, linkedin_seen_urls)
             log.info("[workflow] linkedin unique after dedup: %d (dropped %d)", len(unique), len(batch) - len(unique))
             linkedin_candidates.extend(unique)
-            linkedin_candidates = _rank_and_trim_dynamic(linkedin_candidates, user_input, linkedin_quota * 2)
+            linkedin_candidates = await _rank_and_trim_dynamic(linkedin_candidates, user_input, linkedin_quota * 2)
         except Exception as e:
             log.error("[workflow] linkedin phase failed: %s", e, exc_info=True)
 
@@ -358,9 +379,35 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
     searxng_jobs = _browse_and_build(searxng_candidates, searxng_quota, "searxng", final_seen_titles)
     linkedin_jobs = _browse_and_build(linkedin_candidates, linkedin_quota, "linkedin", final_seen_titles)
 
-    jobs = searxng_jobs + linkedin_jobs
+    # ATS jobs are already well-structured (no LLM browsing needed)
+    # Build JobResult dicts for ATS jobs
+    ats_structured: List[dict] = []
+    for job in ats_jobs:
+        title = (job.get("title") or "").strip()
+        url = (job.get("url") or "").strip()
+        description = (job.get("description") or "").strip()
+        if not title and not description:
+            continue
+        if _is_duplicate(title, final_seen_titles):
+            continue
+        final_seen_titles.append(title)
+
+        ats_structured.append(JobResult(
+            title=title,
+            company=(job.get("company") or "").strip(),
+            location=job.get("location") or None,
+            description=description,
+            url=url or None,
+            skills=extract_skills_from_text(description) if description else [],
+            job_type="unknown",
+            posted_date=str(job.get("posted_date")) if job.get("posted_date") else None,
+            salary=job.get("salary") or None,
+            source=job.get("source", "ats"),
+        ).model_dump())
+
+    jobs = ats_structured + searxng_jobs + linkedin_jobs
     log.info(
-        "[workflow] done — %d jobs extracted (searxng=%d, linkedin=%d)",
-        len(jobs), len(searxng_jobs), len(linkedin_jobs),
+        "[workflow] done — %d jobs extracted (ats=%d, searxng=%d, linkedin=%d)",
+        len(jobs), len(ats_structured), len(searxng_jobs), len(linkedin_jobs),
     )
     return jobs
