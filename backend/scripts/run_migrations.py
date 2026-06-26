@@ -5,10 +5,11 @@ MongoDB Migration Runner for Job Search Backend
 Supports both JavaScript (mongosh) and Python (Motor) migrations.
 
 Usage:
-    python scripts/run_migrations.py --uri "mongodb+srv://..." --db jobapp
+    python scripts/run_migrations.py --uri "mongodb://localhost:27017" --db jobapp
     python scripts/run_migrations.py --list   # List available migrations
     python scripts/run_migrations.py --status # Show migration status
     python scripts/run_migrations.py --rollback # Rollback all
+    python -m migrations.001_initial_schema --uri "mongodb://localhost:27017" --db jobapp
 
 Environment:
     MONGODB_URI=mongodb+srv://...  # Alternative to --uri
@@ -49,7 +50,8 @@ class Migration:
     def _compute_checksum(self) -> str:
         """Compute SHA256 checksum of migration file."""
         import hashlib
-        content = self.path.read_text(encoding='utf-8')
+
+        content = self.path.read_text(encoding="utf-8")
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def __repr__(self):
@@ -69,9 +71,7 @@ class MigrationRunner:
     async def connect(self):
         """Connect to MongoDB."""
         self.client = AsyncIOMotorClient(
-            self.uri,
-            maxPoolSize=10,
-            serverSelectionTimeoutMS=5000
+            self.uri, maxPoolSize=10, serverSelectionTimeoutMS=5000
         )
         self.db = self.client[self.db_name]
 
@@ -108,9 +108,11 @@ class MigrationRunner:
         # Sort by filename (001, 002, etc.)
         self.migrations.sort(key=lambda m: m.name)
 
-        print(f"✓ Loaded {len(self.migrations)} migrations "
-              f"({len([m for m in self.migrations if m.type == 'python'])} Python, "
-              f"{len([m for m in self.migrations if m.type == 'javascript'])} JavaScript)")
+        print(
+            f"✓ Loaded {len(self.migrations)} migrations "
+            f"({len([m for m in self.migrations if m.type == 'python'])} Python, "
+            f"{len([m for m in self.migrations if m.type == 'javascript'])} JavaScript)"
+        )
 
     def list_migrations(self):
         """Display available migrations."""
@@ -127,9 +129,12 @@ class MigrationRunner:
     async def get_applied_migrations(self) -> List[Dict]:
         """Get list of already applied migrations."""
         try:
-            applied = await self.db[MIGRATIONS_COLLECTION].find(
-                {}, {"_id": 0, "migration": 1, "version": 1, "applied_at": 1}
-            ).sort("version", 1).to_list(None)
+            applied = (
+                await self.db[MIGRATIONS_COLLECTION]
+                .find({}, {"_id": 0, "migration": 1, "version": 1, "applied_at": 1})
+                .sort("version", 1)
+                .to_list(None)
+            )
             return applied
         except PyMongoError:
             return []
@@ -148,8 +153,7 @@ class MigrationRunner:
         try:
             # Import the module
             spec = importlib.util.spec_from_file_location(
-                f"migrations.{migration.name}",
-                migration.path
+                f"migrations.{migration.name}", migration.path
             )
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
@@ -157,14 +161,16 @@ class MigrationRunner:
             # Find a class that has a 'run' method and a 'name' attribute
             migration_class = None
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                if hasattr(obj, 'run') and hasattr(obj, 'name'):
+                if hasattr(obj, "run") and hasattr(obj, "name"):
                     # Check if this class belongs to this module (not imported from elsewhere)
                     if obj.__module__ == module.__name__:
                         migration_class = obj
                         break
 
             if not migration_class:
-                print(f"✗ Migration {migration.name} has no Migration class with run() method")
+                print(
+                    f"✗ Migration {migration.name} has no Migration class with run() method"
+                )
                 return False
 
             # Instantiate and run
@@ -188,6 +194,7 @@ class MigrationRunner:
         except Exception as e:
             print(f"✗ Failed to apply {migration.name}: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -200,16 +207,11 @@ class MigrationRunner:
             self.uri,
             "--quiet",
             "--eval",
-            f"load('{migration.path.absolute()}');"
+            f"load('{migration.path.absolute()}');",
         ]
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
             print(result.stdout)
 
@@ -243,8 +245,7 @@ class MigrationRunner:
         try:
             # Import the ROLLBACK module
             spec = importlib.util.spec_from_file_location(
-                "migrations.ROLLBACK",
-                MIGRATIONS_DIR / "ROLLBACK.py"
+                "migrations.ROLLBACK", MIGRATIONS_DIR / "ROLLBACK.py"
             )
             if not spec or not spec.loader:
                 print("✗ Could not load ROLLBACK.py")
@@ -256,7 +257,7 @@ class MigrationRunner:
             # Find the Rollback class
             rollback_class = None
             for name, obj in inspect.getmembers(module, inspect.isclass):
-                if hasattr(obj, 'run') and obj.__module__ == module.__name__:
+                if hasattr(obj, "run") and obj.__module__ == module.__name__:
                     rollback_class = obj
                     break
 
@@ -278,7 +279,9 @@ class MigrationRunner:
         for a in applied:
             print(f"  - {a['migration']} (v{a.get('version', '?')})")
 
-        response = input("\nRollback ALL migrations? THIS WILL DELETE DATA! (type 'YES'): ")
+        response = input(
+            "\nRollback ALL migrations? THIS WILL DELETE DATA! (type 'YES'): "
+        )
         if response != "YES":
             print("Cancelled")
             return False
@@ -294,7 +297,9 @@ class MigrationRunner:
 
         print("\nMigration Status:")
         print("─" * 80)
-        print(f"{'Migration':<40} {'Type':<12} {'Status':<12} {'Version':<8} {'Applied At'}")
+        print(
+            f"{'Migration':<40} {'Type':<12} {'Status':<12} {'Version':<8} {'Applied At'}"
+        )
         print("─" * 80)
 
         for mig in self.migrations:
@@ -302,21 +307,35 @@ class MigrationRunner:
                 record = next((a for a in applied if a["migration"] == mig.name), {})
                 status = "✓ Applied"
                 version = str(record.get("version", "-"))
-                applied_at = record.get("applied_at", "").strftime("%Y-%m-%d %H:%M") if record.get("applied_at") else "-"
+                applied_at = (
+                    record.get("applied_at", "").strftime("%Y-%m-%d %H:%M")
+                    if record.get("applied_at")
+                    else "-"
+                )
             else:
                 status = "pending"
                 version = "-"
                 applied_at = "-"
 
-            print(f"{mig.name:<40} {mig.type:<12} {status:<12} {version:<8} {applied_at}")
+            print(
+                f"{mig.name:<40} {mig.type:<12} {status:<12} {version:<8} {applied_at}"
+            )
 
         print("─" * 80)
         print(f"Total: {len(self.migrations)} migrations, {len(applied)} applied")
 
         # Collection counts
         print("\nCollection Document Counts:")
-        collections = ["jobs", "resumes", "users", "applications", "companies",
-                      "skills", "searchHistory", "jobMatches"]
+        collections = [
+            "jobs",
+            "resumes",
+            "users",
+            "applications",
+            "companies",
+            "skills",
+            "searchHistory",
+            "jobMatches",
+        ]
         for coll in collections:
             try:
                 count = await self.db[coll].count_documents({})
@@ -367,19 +386,27 @@ class MigrationRunner:
                 if response.lower() != "yes":
                     break
 
-        print("\n✅ Migration run complete" if all_success else "\n⚠ Migration run completed with errors")
+        print(
+            "\n✅ Migration run complete"
+            if all_success
+            else "\n⚠ Migration run completed with errors"
+        )
         return all_success
 
 
 async def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="MongoDB Migration Runner (Python & JavaScript)")
+    parser = argparse.ArgumentParser(
+        description="MongoDB Migration Runner (Python & JavaScript)"
+    )
     parser.add_argument("--uri", help="MongoDB connection URI")
     parser.add_argument("--db", default="jobapp", help="Database name")
     parser.add_argument("--list", action="store_true", help="List available migrations")
     parser.add_argument("--status", action="store_true", help="Show migration status")
-    parser.add_argument("--rollback", action="store_true", help="Rollback all migrations")
+    parser.add_argument(
+        "--rollback", action="store_true", help="Rollback all migrations"
+    )
 
     args = parser.parse_args()
 
@@ -411,6 +438,7 @@ async def main():
     except Exception as e:
         print(f"\n✗ Error: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
     finally:

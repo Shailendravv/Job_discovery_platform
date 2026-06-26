@@ -16,7 +16,7 @@ from datetime import datetime
 
 try:
     from motor.motor_asyncio import AsyncIOMotorClient
-    from pymongo.errors import PyMongoError
+    from pymongo.errors import CollectionInvalid, PyMongoError
 except ImportError:
     print("Error: Required packages not installed.")
     print("Run: pip install pymongo motor")
@@ -71,7 +71,7 @@ JOBS_SCHEMA = {
             "source": {
                 "bsonType": "string",
                 "enum": ["searxng", "linkedin", "indeed", "glassdoor", "greenhouse",
-                        "lever", "unknown"]
+                        "lever", "ashby", "workday", "unknown"]
             },
             "source_id": {"bsonType": "string"},
             "user_id": {"bsonType": ["string", "null"]},
@@ -544,12 +544,11 @@ class Migration001:
                     )
                     print("  ✓ Created index on _migrations.migration")
 
+            except CollectionInvalid:
+                print(f"  ⚡ Collection already exists: {collection_name}")
             except PyMongoError as e:
-                if e.code == 48:  # NamespaceExists
-                    print(f"  ⚡ Collection already exists: {collection_name}")
-                else:
-                    print(f"  ✗ Error creating {collection_name}: {e}")
-                    raise
+                print(f"  ✗ Error creating {collection_name}: {e}")
+                raise
 
         # Record migration
         await self.record_migration(db, created_count)
