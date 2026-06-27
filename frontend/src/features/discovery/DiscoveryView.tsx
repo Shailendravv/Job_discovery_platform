@@ -17,6 +17,7 @@ const statusMessages = [
 export const DiscoveryView: React.FC = () => {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [location, setLocation] = useState("");
   const [phase, setPhase] = useState<SearchPhase>("idle");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,7 @@ export const DiscoveryView: React.FC = () => {
     startProgressAnimation();
 
     try {
-      const response = await api.searchJobs({ user_input: searchQuery });
+      const response = await api.searchJobs({ user_input: searchQuery, location: location || undefined });
       clearIntervals();
       setJobs(response.jobs);
       setSavedCount(response.saved);
@@ -107,6 +108,7 @@ export const DiscoveryView: React.FC = () => {
     setError(null);
     setJobs([]);
     setQuery("");
+    setLocation("");
   };
 
   const handleRecentClick = (search: string) => {
@@ -196,6 +198,27 @@ export const DiscoveryView: React.FC = () => {
                 {phase === "searching" ? "Cancel" : "Search"}
               </button>
             </div>
+          </div>
+
+          {/* Location Input */}
+          <div className="relative w-full mt-3">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <MapPin className="w-4 h-4" style={{ color: "var(--color-secondary)" }} />
+            </div>
+            <input
+              type="text"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Location (optional) — e.g. Remote, India, San Francisco"
+              className="w-full h-11 pl-10 pr-4 rounded-xl text-sm outline-none transition-all border"
+              style={{
+                background: "var(--color-surface-container-lowest)",
+                borderColor: "var(--color-outline-variant)",
+                color: "var(--color-on-surface)",
+              }}
+              disabled={phase === "searching"}
+            />
           </div>
         </div>
       </section>

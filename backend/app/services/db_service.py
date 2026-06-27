@@ -7,7 +7,7 @@ from pymongo import UpdateOne
 
 log = logging.getLogger(__name__)
 
-async def save_jobs(db: AsyncIOMotorDatabase, jobs: list[dict], search_query: str = None) -> int:
+async def save_jobs(db: AsyncIOMotorDatabase, jobs: list[dict], search_query: str = None, search_location: str = None) -> int:
     if not jobs:
         return 0
 
@@ -48,6 +48,8 @@ async def save_jobs(db: AsyncIOMotorDatabase, jobs: list[dict], search_query: st
         update["$set"]["updated_at"] = now
         if search_query:
             update["$set"]["search_query"] = search_query
+        if search_location:
+            update["$set"]["search_location"] = search_location
 
         operations.append(UpdateOne(filter_, update, upsert=True))
 

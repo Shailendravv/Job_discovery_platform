@@ -90,15 +90,22 @@ class SearchProvider:
             log.warning("[provider] failed to parse MCP search response: %s", e)
         return []
 
-    async def _search_linkedin_async(self, query: str, num_results: int) -> List[Dict[str, Any]]:
+    async def _search_linkedin_async(self, query: str, num_results: int, location: Optional[str] = None) -> List[Dict[str, Any]]:
         """Async search LinkedIn Guest API for job postings.
-        Enhanced to fetch full job descriptions by visiting job URLs."""
+        Enhanced to fetch full job descriptions by visiting job URLs.
+        
+        Parameters
+        ----------
+        location : str or None
+            Override for the default LINKEDIN_GUEST_API_LOCATION. If None, uses the env-configured default.
+        """
         api_url = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
         # Strip site: operators from query
         clean_query = re.sub(r'site:\S+', '', query).strip()
+        loc_param = location if location else settings.LINKEDIN_GUEST_API_LOCATION
         params = {
             "keywords": clean_query,
-            "location": settings.LINKEDIN_GUEST_API_LOCATION,
+            "location": loc_param,
             "f_TPR": settings.LINKEDIN_GUEST_API_TIME_RANGE,
             "start": "0",
             "count": str(num_results),
@@ -184,6 +191,7 @@ class SearchProvider:
                         "title": title,
                         "url": job_url,
                         "content": description,
+                        "location": location,
                         "source": "linkedin",
                     })
 

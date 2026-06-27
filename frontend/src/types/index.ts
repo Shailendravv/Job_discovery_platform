@@ -40,6 +40,7 @@ export interface JobFilterParams {
 
 export interface JobSearchRequest {
   user_input: string;
+  location?: string;
 }
 
 export interface JobSearchResponse {

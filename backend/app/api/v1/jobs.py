@@ -18,14 +18,15 @@ router = APIRouter()
 
 @router.post("/search", response_model=JobSearchResponse)
 async def search_jobs(request: JobSearchRequest, db=Depends(get_db)):
-    """Search jobs. Frontend sends only user_input — all targeting config lives in backend."""
-    log.info("[search] user_input=%r", request.user_input)
-    results = await search_jobs_workflow(user_input=request.user_input)
+    """Search jobs. Frontend sends user_input and optional location filter."""
+    log.info("[search] user_input=%r location=%r", request.user_input, request.location)
+    results = await search_jobs_workflow(user_input=request.user_input, location=request.location)
     linkedin_count = sum(1 for r in results if r.get("source") == "linkedin")
     searxng_count = sum(1 for r in results if r.get("source") == "searxng")
-    log.info("[search] returning %d jobs (searxng=%d, linkedin=%d)", len(results), searxng_count, linkedin_count)
+    ats_count = sum(1 for r in results if r.get("source") in ("greenhouse", "lever", "ashby", "workday"))
+    log.info("[search] returning %d jobs (ats=%d, searxng=%d, linkedin=%d)", len(results), ats_count, searxng_count, linkedin_count)
     # Persist results to database
-    saved_count = await save_jobs(db, results, search_query=request.user_input)
+    saved_count = await save_jobs(db, results, search_query=request.user_input, search_location=request.location)
     return JobSearchResponse(jobs=results, saved=saved_count)
 
 

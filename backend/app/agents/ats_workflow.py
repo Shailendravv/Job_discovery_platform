@@ -115,7 +115,7 @@ def _filter_by_relevance(jobs: list[dict], user_input: str) -> list[dict]:
     return [job for _, job in scored]
 
 
-async def scan_ats_companies(user_input: Optional[str] = None) -> list[dict]:
+async def scan_ats_companies(user_input: Optional[str] = None, location: Optional[str] = None) -> list[dict]:
     """Fetch all jobs from all configured ATS companies.
 
     Parameters
@@ -123,6 +123,9 @@ async def scan_ats_companies(user_input: Optional[str] = None) -> list[dict]:
     user_input : str or None
         The user's search query. Used for relevance filtering.
         If None, all jobs are returned unfiltered.
+    location : str or None
+        Location filter, e.g. "Remote", "India", "San Francisco".
+        Applied as a hard filter — jobs not matching are dropped.
 
     Returns
     -------
@@ -165,7 +168,15 @@ async def scan_ats_companies(user_input: Optional[str] = None) -> list[dict]:
     if user_input:
         filtered = _filter_by_relevance(all_jobs, user_input)
         log.info("[ats] %d jobs after relevance filter (from %d raw)", len(filtered), len(all_jobs))
-        return filtered
+    else:
+        filtered = all_jobs
 
-    log.info("[ats] total jobs collected: %d", len(all_jobs))
-    return all_jobs
+    if location:
+        loc_lower = location.lower()
+        loc_pat = re.compile(r'\b' + re.escape(loc_lower) + r'\b')
+        location_filtered = [job for job in filtered if loc_pat.search((job.get("location") or "").lower())]
+        log.info("[ats] %d jobs after location filter '%s' (from %d)", len(location_filtered), location, len(filtered))
+        return location_filtered
+
+    log.info("[ats] total jobs collected: %d", len(filtered))
+    return filtered

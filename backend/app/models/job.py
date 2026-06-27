@@ -6,11 +6,16 @@ from pydantic import BaseModel, Field
 
 
 class JobSearchRequest(BaseModel):
-    '''Frontend sends only the job search query. All other config lives in backend .env.'''
+    '''Frontend sends the job search query and optional location filter.'''
     user_input: str = Field(
         ...,
         description='Job search query in plain text',
         examples=['React developer Python 4 years experience remote'],
+    )
+    location: Optional[str] = Field(
+        default=None,
+        description='Location filter, e.g. "Remote", "India", "San Francisco"',
+        examples=['Remote', 'India'],
     )
 
 

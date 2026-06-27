@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import difflib
-from typing import List
+from typing import List, Optional
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
 from app.agents.tools.browse_jobs import browse_extract
@@ -104,13 +104,14 @@ def _build_queries(parsed: dict) -> List[str]:
         queries.append(f"{base} site:{site}")
     return queries
 
-async def _build_queries_dynamic(user_input: str) -> List[str]:
+async def _build_queries_dynamic(user_input: str, location: Optional[str] = None) -> List[str]:
     """Uses LLM to dynamically generate SearXNG queries targeting ATS platforms."""
     log.info("[workflow] Dynamically building search queries using LLM")
     sites_str = ", ".join(settings.search_sites_list)
-    
+    location_hint = f" Location preference: '{location}'." if location else ""
+
     prompt = (
-        f"You are a job search assistant. The user wants to find a job: '{user_input}'\n"
+        f"You are a job search assistant. The user wants to find a job: '{user_input}'.{location_hint}\n"
         "Generate up to 3 distinct search queries to find this job. "
         f"Target these specific job platforms: {sites_str}. "
         "Each query MUST use the 'site:' operator. "
@@ -317,11 +318,11 @@ def _browse_and_build(candidates: List[dict], quota: int, label: str, final_seen
     return jobs
 
 
-async def search_jobs_workflow(user_input: str) -> List[dict]:
-    """Entry point called by the API. Accepts plain-text user query only."""
-    log.info("[workflow] starting dynamic search for: %s", user_input)
+async def search_jobs_workflow(user_input: str, location: Optional[str] = None) -> List[dict]:
+    """Entry point called by the API. Accepts plain-text user query and optional location filter."""
+    log.info("[workflow] starting dynamic search for: %s location=%s", user_input, location)
 
-    queries = await _build_queries_dynamic(user_input)
+    queries = await _build_queries_dynamic(user_input, location=location)
     log.info("[workflow] will run %d queries: %s", len(queries), queries)
 
     searxng_quota = settings.SEARCH_MAX_RESULTS   # e.g. 15 final jobs from SearXNG
@@ -350,7 +351,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
     log.info("[workflow] ATS_ENABLED=%r", settings.ATS_ENABLED)
     if settings.ATS_ENABLED:
         try:
-            raw_ats_jobs = await scan_ats_companies(user_input=user_input)
+            raw_ats_jobs = await scan_ats_companies(user_input=user_input, location=location)
             log.info("[workflow] ats raw results: %d", len(raw_ats_jobs))
             # Dedup ATS jobs against SearXNG URLs (ATS data higher quality)
             for job in raw_ats_jobs:
@@ -369,7 +370,7 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
     if settings.LINKEDIN_GUEST_API_ENABLED:
         log.info("[workflow] calling linkedin with query=%r count=%d", user_input, linkedin_quota * 2)
         try:
-            batch = await provider._search_linkedin_async(user_input, linkedin_quota * 2)
+            batch = await provider._search_linkedin_async(user_input, linkedin_quota * 2, location=location)
             log.info("[workflow] linkedin raw results: %d — sample titles: %s", len(batch), [r.get('title') for r in batch[:3]])
             unique = _collect_unique_urls_only(batch, linkedin_seen_urls)
             log.info("[workflow] linkedin unique after dedup: %d (dropped %d)", len(unique), len(batch) - len(unique))
@@ -410,6 +411,13 @@ async def search_jobs_workflow(user_input: str) -> List[dict]:
         ).model_dump())
 
     jobs = ats_structured + searxng_jobs + linkedin_jobs
+
+    if location:
+        loc_pat = re.compile(r'\b' + re.escape(location.lower()) + r'\b')
+        before = len(jobs)
+        jobs = [j for j in jobs if loc_pat.search((j.get("location") or "").lower())]
+        log.info("[workflow] %d jobs after location filter '%s' (from %d)", len(jobs), location, before)
+
     log.info(
         "[workflow] done — %d jobs extracted (ats=%d, searxng=%d, linkedin=%d)",
         len(jobs), len(ats_structured), len(searxng_jobs), len(linkedin_jobs),
