@@ -66,6 +66,8 @@ def _extract_keywords(user_input: str) -> list[str]:
         "between", "under", "above", "from", "up", "down", "out", "off",
         "just", "because", "very", "too", "also", "more", "some", "any",
         "each", "every", "all", "both", "few", "most", "other", "such",
+        # Experience-level qualifiers (filtered out so they don't dilute skill keywords)
+        "entry", "intern", "intermediate", "junior", "lead", "mid", "principal", "senior", "staff",
     })
 
     words = re.split(r"\W+", user_input.lower())
@@ -86,6 +88,8 @@ def _filter_by_relevance(jobs: list[dict], user_input: str) -> list[dict]:
     if not keywords:
         return jobs
 
+    patterns = [re.compile(r'\b' + re.escape(kw) + r'\b') for kw in keywords]
+
     scored: list[tuple[int, dict]] = []
     for job in jobs:
         score = 0
@@ -94,17 +98,17 @@ def _filter_by_relevance(jobs: list[dict], user_input: str) -> list[dict]:
         location = (job.get("location") or "").lower()
         description = (job.get("description") or "").lower()
 
-        for kw in keywords:
-            if kw in title:
+        for pat in patterns:
+            if pat.search(title):
                 score += 3
-            if kw in description:
+            if pat.search(description):
                 score += 2
-            if kw in company:
+            if pat.search(company):
                 score += 1
-            if kw in location:
+            if pat.search(location):
                 score += 1
 
-        if score > 0:
+        if score >= 3:
             scored.append((score, job))
 
     scored.sort(key=lambda x: -x[0])

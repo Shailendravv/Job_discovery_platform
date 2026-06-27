@@ -36,17 +36,24 @@ app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
 async def startup():
     await connect_db()
     from app.core.config import settings
+
     log = logging.getLogger("startup")
 
     # Configure Cloudinary
-    if settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY and settings.CLOUDINARY_API_SECRET:
+    if (
+        settings.CLOUDINARY_CLOUD_NAME
+        and settings.CLOUDINARY_API_KEY
+        and settings.CLOUDINARY_API_SECRET
+    ):
         try:
             configure_cloudinary()
             log.info("  CLOUDINARY                  : configured")
         except Exception as e:
             log.warning("  CLOUDINARY                  : configuration failed — %s", e)
     else:
-        log.warning("  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)")
+        log.warning(
+            "  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)"
+        )
 
     # Log LLM Provider Config
     log.info("=== LLM Provider Config ===")
@@ -70,12 +77,15 @@ async def startup():
 
     # Log legacy Groq status (for reference)
     if settings.GROQ_API_KEY:
-        log.info("  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL)
+        log.info(
+            "  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL
+        )
 
     log.info("=== Search Provider Config ===")
     log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)
     log.info("  LINKEDIN_GUEST_API_ENABLED : %r", settings.LINKEDIN_GUEST_API_ENABLED)
     log.info("  LINKEDIN_GUEST_API_LOCATION: %r", settings.LINKEDIN_GUEST_API_LOCATION)
+    log.info("  ATS_ENABLED                : %r", settings.ATS_ENABLED)
     log.info("==============================")
 
 

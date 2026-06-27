@@ -47,7 +47,7 @@ export const DashboardView: React.FC = () => {
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
   // List of unique sources & types to filter on (can also be queried dynamically)
-  const sources = ["linkedin", "indeed", "searxng"];
+  const sources = ["linkedin", "indeed", "searxng", "greenhouse", "ashby", "lever", "workday"];
   const jobTypes = [
     "remote",
     "on-site",
@@ -95,6 +95,10 @@ export const DashboardView: React.FC = () => {
     if (s.includes("linkedin")) return "LINKEDIN";
     if (s.includes("indeed")) return "INDEED";
     if (s.includes("searx")) return "SEARXNG";
+    if (s.includes("greenhouse")) return "GREENHOUSE";
+    if (s.includes("ashby")) return "ASHBY";
+    if (s.includes("lever")) return "LEVER";
+    if (s.includes("workday")) return "WORKDAY";
     return src.toUpperCase();
   };
 
@@ -108,6 +112,14 @@ export const DashboardView: React.FC = () => {
         return "border-orange-200 text-orange-700 bg-orange-50/50 hover:bg-orange-50";
       case "SEARXNG":
         return "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50";
+      case "GREENHOUSE":
+        return "border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-50";
+      case "ASHBY":
+        return "border-cyan-200 text-cyan-700 bg-cyan-50/50 hover:bg-cyan-50";
+      case "LEVER":
+        return "border-rose-200 text-rose-700 bg-rose-50/50 hover:bg-rose-50";
+      case "WORKDAY":
+        return "border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50";
       default:
         return "border-slate-200 text-slate-600 bg-slate-50";
     }
