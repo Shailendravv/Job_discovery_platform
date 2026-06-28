@@ -171,12 +171,13 @@ async def scan_ats_companies(user_input: Optional[str] = None, location: Optiona
     else:
         filtered = all_jobs
 
-    if location:
+    if location and location.lower() != "remote":
         loc_lower = location.lower()
-        loc_pat = re.compile(r'\b' + re.escape(loc_lower) + r'\b')
-        location_filtered = [job for job in filtered if loc_pat.search((job.get("location") or "").lower())]
+        location_filtered = [job for job in filtered if (job.get("location") or "").lower() and loc_lower in (job.get("location") or "").lower()]
         log.info("[ats] %d jobs after location filter '%s' (from %d)", len(location_filtered), location, len(filtered))
         return location_filtered
+    elif location and location.lower() == "remote":
+        log.info("[ats] location='remote' — skipping location filter, returning %d jobs", len(filtered))
 
     log.info("[ats] total jobs collected: %d", len(filtered))
     return filtered

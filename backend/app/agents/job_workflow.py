@@ -85,9 +85,15 @@ def _parse_user_input(user_input: str) -> dict:
 
     return {"query": text, "sites": sites, "fresh": fresh, "company_careers": company_careers}
 
-def _build_queries(parsed: dict) -> List[str]:
+def _build_queries(parsed: dict, location: Optional[str] = None) -> List[str]:
     """Fallback query builder if LLM fails."""
     base = parsed["query"]
+    if location:
+        loc_lower = location.lower()
+        if loc_lower == "remote":
+            base = f"{base} remote"
+        else:
+            base = f"{base} {location}" if location.lower() not in base.lower() else base
     sites = parsed["sites"]
     careers_mode = parsed["company_careers"]
     queries: List[str] = []
@@ -109,10 +115,16 @@ async def _build_queries_dynamic(user_input: str, location: Optional[str] = None
     """Uses LLM to dynamically generate SearXNG queries targeting ATS platforms."""
     log.info("[workflow] Dynamically building search queries using LLM")
     sites_str = ", ".join(settings.search_sites_list)
-    location_hint = f" Location preference: '{location}'." if location else ""
+
+    if location and location.lower() == "remote":
+        location_instruction = " The job can be remote/from anywhere — include the word 'remote' in most queries."
+    elif location:
+        location_instruction = f" Include the location '{location}' as a search term in each query (e.g. add '{location}' to the query string)."
+    else:
+        location_instruction = ""
 
     prompt = (
-        f"You are a job search assistant. The user wants to find a job: '{user_input}'.{location_hint}\n"
+        f"You are a job search assistant. The user wants to find a job: '{user_input}'.{location_instruction}\n"
         "Generate up to 3 distinct search queries to find this job. "
         f"Target these specific job platforms: {sites_str}. "
         "Each query MUST use the 'site:' operator. "
@@ -138,7 +150,7 @@ async def _build_queries_dynamic(user_input: str, location: Optional[str] = None
         log.warning("[workflow] LLM query generation failed: %s. Falling back to default logic.", e)
         
     parsed = _parse_user_input(user_input)
-    return _build_queries(parsed)
+    return _build_queries(parsed, location=location)
 
 
 def _rank_and_trim(results: List[dict], query: str, top_n: int) -> List[dict]:
@@ -416,11 +428,13 @@ async def search_jobs_workflow(user_input: str, location: Optional[str] = None) 
 
     jobs = ats_structured + searxng_jobs + linkedin_jobs
 
-    if location:
-        loc_pat = re.compile(r'\b' + re.escape(location.lower()) + r'\b')
+    if location and location.lower() != "remote":
+        loc_lower = location.lower()
         before = len(jobs)
-        jobs = [j for j in jobs if loc_pat.search((j.get("location") or "").lower())]
+        jobs = [j for j in jobs if (j.get("location") or "").lower() and loc_lower in (j.get("location") or "").lower()]
         log.info("[workflow] %d jobs after location filter '%s' (from %d)", len(jobs), location, before)
+    elif location and location.lower() == "remote":
+        log.info("[workflow] location='remote' — skipping location filter, returning %d jobs", len(jobs))
 
     log.info(
         "[workflow] done — %d jobs extracted (ats=%d, searxng=%d, linkedin=%d)",
