@@ -2,8 +2,7 @@
 Ollama LLM provider.
 
 Calls a locally-hosted Ollama instance. Supports JSON format via Ollama's
-native format=json parameter. Uses threading to enforce timeouts (Ollama's
-HTTP API doesn't natively support client-side timeouts for streaming).
+native format=json parameter.
 
 Environment variables:
     LLM_PROVIDER=ollama
@@ -13,8 +12,8 @@ Environment variables:
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import threading
 import time
 from typing import Optional
 
@@ -54,67 +53,64 @@ class OllamaProvider(LLMProvider):
         system_prompt: Optional[str] = None,
     ) -> LLMResult:
         start = time.monotonic()
-        failure_reason = ""
 
         try:
-            # Use threading to enforce timeout (Ollama HTTP client doesn't always respect it)
-            result: dict[str, str] = {}
-            exc_box: list[Exception] = []
+            async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
+                messages: list[dict] = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": prompt})
 
-            def _worker() -> None:
+                body: dict = {
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "temperature": self.temperature,
+                        "num_predict": max_tokens,
+                    },
+                }
+                if json_format:
+                    body["format"] = "json"
+
                 try:
-                    with httpx.Client(timeout=timeout) as client:
-                        messages: list[dict] = []
-                        if system_prompt:
-                            messages.append({"role": "system", "content": system_prompt})
-                        messages.append({"role": "user", "content": prompt})
+                    body["think"] = False
+                    resp = await asyncio.wait_for(
+                        client.post(f"{self.base_url}/api/chat", json=body),
+                        timeout=timeout,
+                    )
+                except Exception:
+                    body.pop("think", None)
+                    resp = await asyncio.wait_for(
+                        client.post(f"{self.base_url}/api/chat", json=body),
+                        timeout=timeout,
+                    )
 
-                        body: dict = {
-                            "model": self.model,
-                            "messages": messages,
-                            "stream": False,
-                            "options": {
-                                "temperature": self.temperature,
-                                "num_predict": max_tokens,
-                            },
-                        }
-                        if json_format:
-                            body["format"] = "json"
-
-                        try:
-                            body["think"] = False
-                            resp = client.post(f"{self.base_url}/api/chat", json=body)
-                        except Exception:
-                            body.pop("think", None)
-                            resp = client.post(f"{self.base_url}/api/chat", json=body)
-
-                        resp.raise_for_status()
-                        data = resp.json()
-                        content = data.get("message", {}).get("content", "")
-                        if json_format:
-                            content = _clean_json_response(content)
-                        result["content"] = content
-
-                except Exception as e:
-                    exc_box.append(e)
-
-            t = threading.Thread(target=_worker, daemon=True)
-            t.start()
-            t.join(timeout)
-
-            if t.is_alive():
-                raise TimeoutError(f"Ollama timeout after {timeout}s")
-            if exc_box:
-                raise exc_box[0]
+                resp.raise_for_status()
+                data = resp.json()
+                content = data.get("message", {}).get("content", "")
+                if json_format:
+                    content = _clean_json_response(content)
 
             elapsed = (time.monotonic() - start) * 1000
             return LLMResult(
-                content=result.get("content", ""),
+                content=content,
                 provider=self.name,
                 model=self.model,
                 response_time_ms=elapsed,
             )
 
+        except asyncio.TimeoutError:
+            elapsed = (time.monotonic() - start) * 1000
+            failure_reason = f"Ollama timeout after {timeout}s"
+            log.warning("[llm:ollama] generation failed: %s", failure_reason)
+            return LLMResult(
+                content="",
+                provider=self.name,
+                model=self.model,
+                response_time_ms=elapsed,
+                failure_reason=failure_reason,
+            )
         except Exception as e:
             elapsed = (time.monotonic() - start) * 1000
             failure_reason = str(e)

@@ -4,6 +4,7 @@ All search targeting config (sites, freshness, result counts) lives in
 backend config/settings — the frontend sends only user_input.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -273,43 +274,46 @@ def _build_job(result: dict, extracted: dict, snippet: str, base_title: str, url
     ).model_dump()
 
 
-def _browse_and_build(candidates: List[dict], quota: int, label: str, final_seen_titles: List[str]) -> List[dict]:
-    """Browse up to len(candidates) URLs, collecting up to `quota` valid jobs."""
+async def _browse_and_build(candidates: List[dict], quota: int, label: str, final_seen_titles: List[str]) -> List[dict]:
+    """Browse URLs concurrently with a semaphore, collecting up to `quota` valid jobs."""
+    sem = asyncio.Semaphore(5)
+
+    async def _process_one(result: dict) -> dict | None:
+        async with sem:
+            url = result.get("url") or ""
+            snippet = (result.get("description") or result.get("snippet") or result.get("content") or "").strip()
+            base_title = (result.get("title") or result.get("name") or "").strip()
+
+            if not url.startswith(("http://", "https://")):
+                return None
+
+            extracted: dict = {}
+            try:
+                raw_json = await browse_extract(url, JOB_EXTRACT_SCHEMA)
+                extracted = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                if not extracted or all(v is None for v in extracted.values()):
+                    extracted = {}
+            except Exception as exc:
+                log.warning("[workflow][%s] browse_extract failed (%s)", label, exc)
+
+            return _build_job(result, extracted, snippet, base_title, url)
+
+    tasks = [_process_one(r) for r in candidates]
+    job_dicts = await asyncio.gather(*tasks)
+
     jobs: List[dict] = []
-    for idx, result in enumerate(candidates):
+    for job_dict in job_dicts:
+        if job_dict is None:
+            continue
         if len(jobs) >= quota:
             break
-        url = result.get("url") or ""
-        snippet = (result.get("description") or result.get("snippet") or result.get("content") or "").strip()
-        base_title = (result.get("title") or result.get("name") or "").strip()
-
-        if not url.startswith(("http://", "https://")):
-            log.warning("[workflow][%s][%d] no valid URL, skipping", label, idx + 1)
+        title = job_dict.get("title", "")
+        if _is_duplicate(title, final_seen_titles):
+            log.info("[workflow][%s] duplicate after extraction: %r, skipping", label, title)
             continue
+        final_seen_titles.append(title)
 
-        extracted: dict = {}
-        try:
-            raw_json = browse_extract(url, JOB_EXTRACT_SCHEMA)
-            extracted = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
-            if not extracted or all(v is None for v in extracted.values()):
-                extracted = {}
-        except Exception as exc:
-            log.warning("[workflow][%s][%d] browse_extract failed (%s), falling back to snippet", label, idx + 1, exc)
-
-        final_title = (extracted.get("title") or base_title).strip()
-        if _is_duplicate(final_title, final_seen_titles):
-            log.info("[workflow][%s][%d] duplicate after extraction: %r, skipping", label, idx + 1, final_title)
-            continue
-        final_seen_titles.append(final_title)
-
-        job_dict = _build_job(result, extracted, snippet, base_title, url)
-        if job_dict is None:
-            log.warning("[workflow][%s][%d] no title or description, skipping", label, idx + 1)
-            continue
-
-        log.info("[workflow][%s][%d] job_type=%r title=%r", label, idx + 1, job_dict["job_type"], job_dict["title"])
-        # Debug print — use ensure_ascii=True to avoid UnicodeEncodeError
-        # on Windows terminals (cp1252) that can't encode chars like ₹
+        log.info("[workflow][%s] job_type=%r title=%r", label, job_dict.get("job_type"), job_dict.get("title"))
         print(f"\n{'='*60}\n[{label.upper()} JOB {len(jobs)+1}/{quota}]")
         print(json.dumps(job_dict, indent=2, ensure_ascii=True))
         print("=" * 60)
@@ -381,8 +385,8 @@ async def search_jobs_workflow(user_input: str, location: Optional[str] = None) 
 
     # ── Phase 2: Browse each source independently up to its quota ─────────────
     final_seen_titles: List[str] = []
-    searxng_jobs = _browse_and_build(searxng_candidates, searxng_quota, "searxng", final_seen_titles)
-    linkedin_jobs = _browse_and_build(linkedin_candidates, linkedin_quota, "linkedin", final_seen_titles)
+    searxng_jobs = await _browse_and_build(searxng_candidates, searxng_quota, "searxng", final_seen_titles)
+    linkedin_jobs = await _browse_and_build(linkedin_candidates, linkedin_quota, "linkedin", final_seen_titles)
 
     # ATS jobs are already well-structured (no LLM browsing needed)
     # Build JobResult dicts for ATS jobs
