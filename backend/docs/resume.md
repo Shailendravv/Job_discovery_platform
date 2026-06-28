@@ -1,7 +1,7 @@
 ---
 covers: [backend/app/api/v1/resumes.py, backend/app/models/resume.py, backend/app/services/db_service.py]
 status: active
-last_verified: 2026-06-24
+last_verified: 2026-06-28
 ---
 
 # Resume API
@@ -36,7 +36,7 @@ Allows users to upload a resume (PDF/DOCX), have it parsed by an LLM into struct
   2. Fetch job document from MongoDB by `job_id` → 404 if missing.
   3. If resume has no `extracted_text` → return `StructuredTailorErrorResponse` with `error` field (not a 404).
   4. Strip PII (name, email, phone) — never sent to external LLM.
-  5. Send structured resume JSON + job to OpenRouter with ATS system prompt.
+  5. Send structured resume JSON + job to the configured LLM provider (via MultiProvider fallback chain) with ATS system prompt.
   6. Parse tailored JSON response, re-inject PII.
   7. If the LLM pipeline throws → return `StructuredTailorErrorResponse` with `error`, `tailored_text` fallback (first 1000 chars of original resume).
   8. Generate cover letter via `generate_cover_letter`; on failure, fall back to a templated letter.
@@ -106,8 +106,8 @@ No unit test currently covers this endpoint (`backend/tests/test_db_service.py` 
 
 ## Dependencies & Integration Points
 - **Cloudinary** — file storage; uses resource_type `"image"` for PDFs, `"raw"` for DOCX; download URLs must be explicitly generated because direct Cloudinary delivery may be blocked on free accounts.
-- **Groq LLM** via `parse_resume_text` — extracts structured fields from raw text; on failure, empty parsed data is used instead of failing.
-- **OpenRouter** via `run_structured_tailor` — the structured tailoring pipeline with PII stripping; uses free-tier models with automatic fallback.
+- **Configured LLM provider** via `parse_resume_text` (uses `call_llm_async` from `app.core.llm`, routed through the active `LLM_PROVIDER`) — extracts structured fields from raw text; on failure, empty parsed data is used instead of failing.
+- **Configured LLM provider** (via MultiProvider fallback chain, routed through `get_llm_provider()` in `app.services.llm`) — the structured tailoring pipeline with PII stripping; uses free-tier models with automatic fallback across providers.
 - **MongoDB** via `motor` — collections `resumes`, `tailor_sessions`.
 - **`mammoth`** for DOCX→HTML conversion; **`unstructured`** / `pdfminer` for PDF text extraction; **`weasyprint`** / `pdfkit` for HTML→PDF generation.
 

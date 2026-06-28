@@ -6,9 +6,10 @@ Keep this list alphabetical by file name. Every doc file in this directory must 
 
 | File | Covers (source paths) | Status | Last verified |
 |---|---|---|---|
-| jobs.md | backend/app/api/v1/jobs.py, backend/app/services/db_service.py, backend/app/models/job.py | active | 2026-06-24 |
+| jobs.md | backend/app/api/v1/jobs.py, backend/app/services/db_service.py, backend/app/models/job.py | active | 2026-06-28 |
 | payments-refunds.md | backend/payments/refunds/ | active | 2026-06-01 |
-| resume.md | backend/app/api/v1/resumes.py, backend/app/models/resume.py, backend/app/services/db_service.py | active | 2026-06-24 |
+| resume.md | backend/app/api/v1/resumes.py, backend/app/models/resume.py, backend/app/services/db_service.py | active | 2026-06-28 |
+| tailor_structured.md | backend/app/api/v1/resumes.py, backend/app/services/structured_tailor.py, backend/app/services/pii_service.py, backend/app/services/llm/, backend/app/services/cover_letter.py, backend/app/services/html_service.py, backend/app/services/cloudinary_service.py, backend/app/services/db_service.py, backend/app/models/resume.py | active | 2026-06-28 |
 
 ## Rules for this file
 - Add a row whenever you create a doc.

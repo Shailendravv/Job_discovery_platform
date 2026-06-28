@@ -1,7 +1,7 @@
 ---
 covers: [backend/app/api/v1/jobs.py, backend/app/services/db_service.py, backend/app/models/job.py]
 status: active
-last_verified: 2026-06-24
+last_verified: 2026-06-28
 ---
 
 # Jobs API
@@ -10,9 +10,9 @@ last_verified: 2026-06-24
 Lets users search for jobs (via LinkedIn and SearXNG aggregation), browse stored results with filtering/pagination, and view full job details including resume tailoring lifecycle state.
 
 ## Behavior Specification
-- **Inputs:** plain-text search query (`POST /search`), query parameters for filtering/pagination/sorting (`GET /jobs`), or a job ObjectId (`GET /jobs/{job_id}`)
+- **Inputs:** plain-text search query + optional location (`POST /search`), query parameters for filtering/pagination/sorting (`GET /jobs`), or a job ObjectId (`GET /jobs/{job_id}`)
 - **Process:**
-  1. `POST /search` — receives `{user_input: string}`, delegates to `search_jobs_workflow` which collects results from LinkedIn and SearXNG agents, then persists every result to MongoDB via `save_jobs` (upserts by URL, drops jobs without a URL). Returns the result list and a count of saved records.
+  1. `POST /search` — receives `{user_input: string, location?: string}`, delegates to `search_jobs_workflow` which collects results from LinkedIn, SearXNG, and ATS scrapers (greenhouse, lever, ashby, workday), then persists every result to MongoDB via `save_jobs` (upserts by URL with `search_query` and `search_location`, drops jobs without a URL). Returns the result list and a count of saved records.
   2. `GET /jobs` — queries stored jobs with optional filters (`source`, `job_type`, `location` regex, full-text `q`), paginates (`page`, `limit`), sorts (`sort_by` in `created_at|updated_at|title|company|score`, `sort_order` `asc|desc`). On full-text search, sort is forced to descending text score regardless of `sort_by`/`sort_order`.
   3. `GET /jobs/{job_id}` — fetches the single job document, converts `_id` to string, serializes `datetime` fields to ISO strings, then enriches the response with the latest uploaded resume (`active_resume`) and the latest tailor session for this job (`tailoring_status`).
 - **Outputs:**
@@ -37,7 +37,7 @@ Lets users search for jobs (via LinkedIn and SearXNG aggregation), browse stored
 ### API signatures
 
 **`POST /api/v1/search`**
-- Request body: `{user_input: string}`
+- Request body: `{user_input: string, location?: string}`
 - Response 200: `{jobs: JobResult[], saved: number}`
 
 **`GET /api/v1/jobs`**
@@ -53,7 +53,7 @@ Lets users search for jobs (via LinkedIn and SearXNG aggregation), browse stored
 
 **`JobResult` / stored document fields:**
 `id` (aliased from `_id`), `title`, `company`, `location`, `description`, `url`, `apply_url`, `skills` (list), `job_type`, `posted_date`, `salary`, `source`, `experience`, `requirements` (list), `ref_id`
-Plus timestamps: `created_at`, `updated_at`, and `search_query` set on upsert.
+Plus timestamps: `created_at`, `updated_at`, and `search_query` / `search_location` set on upsert.
 
 **`ActiveResumeInfo`:** `resume_id`, `cloudinary_url`, `filename`, `name`, `skills`, `processing_status`
 
@@ -100,4 +100,4 @@ Called with `search_query="test"`.
 - **Full-text search forces score sort** — MongoDB `$text` scoring is the most relevant ranking when the user searches; allowing arbitrary sort columns would produce confusing results (e.g. alphabetical).
 
 ## Open Issues
-None known.
+- No integration tests for the `location` filter on `POST /search` — existing `test_integration.py` covers job search without a location parameter.

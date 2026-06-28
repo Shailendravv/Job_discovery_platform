@@ -10,7 +10,7 @@ covers:
   - backend/app/services/db_service.py
   - backend/app/models/resume.py
 status: needs_review
-last_verified: 2026-06-26
+last_verified: 2026-06-28
 prompt_version: 4
 ---
 
