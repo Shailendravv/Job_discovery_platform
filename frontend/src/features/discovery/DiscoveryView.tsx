@@ -85,7 +85,7 @@ export const DiscoveryView: React.FC = () => {
       setError(err instanceof ApiError ? err.message : "An unexpected error occurred during search.");
       setPhase("error");
     }
-  }, [startProgressAnimation, clearIntervals]);
+  }, [startProgressAnimation, clearIntervals, location]);
 
   const handleSearch = useCallback(() => {
     const trimmed = query.trim();
