@@ -1,7 +1,7 @@
 ---
 covers: [backend/app/api/v1/resumes.py, backend/app/models/resume.py, backend/app/services/db_service.py]
 status: active
-last_verified: 2026-06-28
+last_verified: 2026-07-01
 ---
 
 # Resume API
@@ -74,7 +74,7 @@ Applies to every parsed resume document before MongoDB insertion:
 
 **`POST /tailor-structured`**
 - Request: `{ resume_id: str, job_id: str }`
-- Response 200: `StructuredTailorResponse { resume_id, job_id, tailored_data, tailored_text, cover_letter, download_urls, ats_keywords_matched, ats_keywords_missing, optimization_notes, llm_model }`
+- Response 200: `StructuredTailorResponse { resume_id, job_id, tailored_data, tailored_text, cover_letter, download_urls, ats_keywords_matched, ats_keywords_missing, optimization_notes, llm_model, keyword_coverage_pct, paper_format, jd_keywords, competency_keywords, selected_project_count, keyword_distribution }`
   or `StructuredTailorErrorResponse { resume_id, job_id, error, tailored_text?, cover_letter?, ats_keywords_matched, ats_keywords_missing, optimization_notes }`
 
 **`POST /download-from-url`**

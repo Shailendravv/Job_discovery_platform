@@ -10,7 +10,7 @@ covers:
   - backend/app/services/db_service.py
   - backend/app/models/resume.py
 status: needs_review
-last_verified: 2026-06-28
+last_verified: 2026-07-01
 prompt_version: 4
 ---
 
@@ -50,8 +50,12 @@ The endpoint takes a previously uploaded resume and a saved job posting, strips 
 
 | File | Role |
 |------|------|
-| `backend/app/services/structured_tailor.py` | **Core pipeline** — PII separation, editable vs preserved data, chunking, LLM calls, merging, HTML generation |
+| `backend/app/services/structured_tailor.py` | **Core pipeline** — PII separation, editable vs preserved data, chunking, LLM calls, merging, ATS-optimised HTML generation |
 | `backend/app/services/pii_service.py` | Extracts and re-injects name/email/phone using parsed data + regex fallback |
+| `backend/app/services/ats_keywords.py` | JD keyword extraction (15-20 terms) — called before LLM to guide optimisation |
+| `backend/app/services/ats_scoring.py` | Post-LLM project ranking, bullet reordering, keyword coverage computation |
+| `backend/app/services/ats_location.py` | Detects letter vs A4 paper format from job location |
+| `backend/app/services/html_renderer.py` | ATS-optimised HTML template renderer (Space Grotesk + DM Sans, competency grid) |
 | `backend/app/services/cover_letter.py` | Generates cover letter via Groq LLM (separate call) |
 | `backend/app/services/db_service.py` | MongoDB CRUD: `get_resume_by_id()`, `get_job_by_id()`, `save_tailor_session()` |
 

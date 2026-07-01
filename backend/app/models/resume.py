@@ -76,6 +76,13 @@ class StructuredTailorResponse(BaseModel):
     ats_keywords_missing: List[str] = Field(default_factory=list)
     optimization_notes: List[str] = Field(default_factory=list)
     llm_model: str = ""
+    # ATS optimisation metadata
+    keyword_coverage_pct: float = 0.0
+    paper_format: str = "letter"
+    jd_keywords: List[str] = Field(default_factory=list)
+    competency_keywords: List[str] = Field(default_factory=list)
+    selected_project_count: int = 0
+    keyword_distribution: dict = Field(default_factory=dict)
 
 
 class StructuredTailorErrorResponse(BaseModel):

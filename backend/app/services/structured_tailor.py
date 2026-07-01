@@ -44,6 +44,14 @@ from typing import Optional
 
 from app.services.llm import get_llm_provider
 from app.services.pii_service import extract_pii, reinject_pii
+from app.services.ats_keywords import extract_jd_keywords
+from app.services.ats_scoring import rank_projects_by_jd, reorder_bullets_by_jd, compute_keyword_coverage
+from app.services.ats_location import detect_paper_format, paper_format_to_page_width
+from app.services.html_renderer import (
+    render_cv_template, build_contact_items, build_competency_tags,
+    build_experience_html, build_projects_html, build_education_html,
+    build_certifications_html,
+)
 
 log = logging.getLogger(__name__)
 
@@ -892,6 +900,7 @@ async def _try_single_with_retry(
     job_title: str,
     job_description: str,
     job_skills: list[str],
+    jd_keywords_data: dict | None = None,
 ) -> dict | None:
     """
     Try to process the FULL editable payload in a single LLM call.
@@ -924,10 +933,21 @@ async def _try_single_with_retry(
             job_description=job_description,
         )
 
+        keywords_block = ""
+        if jd_keywords_data:
+            keywords_block = (
+                f"\n\n## JD Keywords (extracted for ATS optimization)\n"
+                f"Required: {', '.join(jd_keywords_data.get('required', []))}\n"
+                f"Preferred: {', '.join(jd_keywords_data.get('preferred', []))}\n"
+                f"Technical: {', '.join(jd_keywords_data.get('technical', []))}\n"
+                f"All Keywords: {', '.join(jd_keywords_data.get('all_keywords', []))}\n"
+            )
+
         user_prompt = (
             f"Please tailor this resume for the following position.\n\n"
             f"Job Title: {job_title}\n"
             f"Skills: {', '.join(job_skills) if job_skills else 'N/A'}"
+            f"{keywords_block}"
         )
 
         llm = get_llm_provider()
@@ -1071,6 +1091,7 @@ async def _call_llm_for_chunk(
     job_skills: list[str],
     chunk_index: int,
     total_chunks: int,
+    jd_keywords_data: dict | None = None,
 ) -> dict | None:
     """
     Send one chunk to the LLM and return parsed result.
@@ -1086,11 +1107,22 @@ async def _call_llm_for_chunk(
         job_description=job_description,
     )
 
+    keywords_block = ""
+    if jd_keywords_data:
+        keywords_block = (
+            f"\n\n## JD Keywords (extracted for ATS optimization)\n"
+            f"Required: {', '.join(jd_keywords_data.get('required', []))}\n"
+            f"Preferred: {', '.join(jd_keywords_data.get('preferred', []))}\n"
+            f"Technical: {', '.join(jd_keywords_data.get('technical', []))}\n"
+            f"All Keywords: {', '.join(jd_keywords_data.get('all_keywords', []))}\n"
+        )
+
     user_prompt = (
         f"Please tailor this resume chunk {chunk_index + 1} of {total_chunks} "
         f"for the following position.\n\n"
         f"Job Title: {job_title}\n"
         f"Skills: {', '.join(job_skills) if job_skills else 'N/A'}"
+        f"{keywords_block}"
     )
 
     llm = get_llm_provider()
@@ -1360,15 +1392,20 @@ async def tailor_resume_structured(
         1. Extract PII (name, email, phone) — NEVER sent to LLM
         2. Separate editable fields (summary, skills, experience, projects)
            from preserved fields (education, certifications)
-        3. Try single LLM call with FULL editable payload
+        2.5 Extract JD keywords (15-20) for ATS optimisation
+        3. Try single LLM call with FULL editable payload + JD keywords
            — On rate-limit (429): retry with 10s, 20s, 30s delays
            — On other failure: fall through to chunking
         4. If single call fails after retries: split into 2-3 chunks
            and call LLM once per chunk, merge results
-        5. Re-inject preserved fields (education, certifications)
-        6. Re-inject PII
-        7. Generate HTML
-        8. Return everything for API response + file generation
+        4.5 Post-LLM: rank projects by JD relevance (keep top 3-4),
+            reorder experience bullets, compute keyword coverage
+        5. Detect paper format (Letter vs A4) from job location
+        6. Re-inject preserved fields (education, certifications)
+        7. Re-inject PII
+        8. Build competency tags from top matched keywords
+        9. Render ATS-optimised HTML template
+        10. Return everything for API response + file generation
 
     Maximum 1 LLM call in the happy path; up to 4+ in worst case (1 + 3 chunks).
 
@@ -1380,13 +1417,19 @@ async def tailor_resume_structured(
     Returns:
         Dict with keys:
             - tailored_data: Full data WITH PII + preserved fields
-            - tailored_html: Formatted HTML
+            - tailored_html: Formatted HTML (new ATS-optimised template)
             - pii: Extracted PII
             - ats_keywords_matched: List[str]
             - ats_keywords_missing: List[str]
             - optimization_notes: List[str]
             - llm_model: Model used
             - chunks_count: Number of LLM calls made
+            - keyword_coverage_pct: float
+            - keyword_distribution: dict
+            - jd_keywords: List[str]
+            - paper_format: "letter" | "a4"
+            - competency_keywords: List[str]
+            - selected_project_count: int
     """
     job_title = job.get("title", "Unknown Position")
     job_description = job.get("description", "")
@@ -1408,9 +1451,20 @@ async def tailor_resume_structured(
         len(preserved.get("certifications", [])),
     )
 
+    # ── Step 2.5: Extract JD keywords ──
+    jd_keywords_data = extract_jd_keywords(
+        job_title, job_description, job_skills,
+    )
+    jd_keywords = jd_keywords_data["all_keywords"]
+    log.info(
+        "Extracted %d JD keywords for ATS optimization",
+        len(jd_keywords),
+    )
+
     # ── Step 3: Try single LLM call with retry ──
     single_result = await _try_single_with_retry(
         editable, job_title, job_description, job_skills,
+        jd_keywords_data=jd_keywords_data,
     )
 
     if single_result is not None:
@@ -1443,6 +1497,7 @@ async def tailor_resume_structured(
                 chunk_result = await _call_llm_for_chunk(
                     chunk, job_title, job_description, job_skills,
                     chunk_index=i, total_chunks=n_chunks,
+                    jd_keywords_data=jd_keywords_data,
                 )
                 chunk_results.append(chunk_result)
 
@@ -1506,18 +1561,65 @@ async def tailor_resume_structured(
                     llm_model = r["_model"]
                     break
 
+    # ── Step 3.5: Post-LLM ATS optimizations ──
+    ranked_projects = rank_projects_by_jd(
+        merged_editable.get("projects", []), jd_keywords,
+    )
+    merged_editable["projects"] = ranked_projects
+
+    reordered_experience = reorder_bullets_by_jd(
+        merged_editable.get("experience", []), jd_keywords,
+    )
+    merged_editable["experience"] = reordered_experience
+
+    coverage = compute_keyword_coverage(merged_editable, jd_keywords)
+    ats_matched = coverage["matched"]
+    ats_missing = coverage["missing"]
+    keyword_coverage_pct = coverage["coverage_pct"]
+    keyword_distribution = coverage["distribution"]
+
     # ── Step 4: Build full data (editable + preserved + PII) ──
     full_data = {}
     full_data.update(merged_editable)
     full_data.update(preserved)  # education + certifications (never sent to LLM)
     full_data = reinject_pii(full_data, pii)  # name, email, phone
 
-    # ── Step 5: Generate HTML ──
-    tailored_html = generate_html_from_tailored(
-        full_data, pii,
-        ats_keywords_matched=ats_matched,
-        ats_keywords_missing=ats_missing,
-        optimization_notes=opt_notes,
+    # ── Step 5: Detect paper format ──
+    paper_format = detect_paper_format(
+        job.get("location"), job.get("description", ""),
+    )
+    page_width = paper_format_to_page_width(paper_format)
+
+    # ── Step 6: Build competency tags (top 8 matched keywords) ──
+    competency_keywords = [kw for kw in jd_keywords if kw in ats_matched][:8]
+    competency_tags = build_competency_tags(competency_keywords)
+
+    # ── Step 7: Build section HTML ──
+    experience_html = build_experience_html(full_data.get("experience", []))
+    projects_html = build_projects_html(full_data.get("projects", []))
+    education_html = build_education_html(full_data.get("education", []))
+    certifications_html = build_certifications_html(full_data.get("certifications", []))
+    skills_html = ", ".join(_xml_escape(s) for s in full_data.get("skills", []))
+
+    # ── Step 8: Build contact items from PII ──
+    contact_items = build_contact_items(
+        email=pii.get("email", ""),
+        phone=pii.get("phone", ""),
+    )
+
+    # ── Step 9: Render ATS-optimised template ──
+    tailored_html = render_cv_template(
+        lang="en",
+        page_width=page_width,
+        name=pii.get("name", "Candidate"),
+        contact_items=contact_items,
+        summary_text=full_data.get("summary", ""),
+        competency_tags=competency_tags,
+        experience_html=experience_html,
+        projects_html=projects_html,
+        education_html=education_html,
+        certifications_html=certifications_html,
+        skills_html=skills_html,
     )
 
     log.info(
@@ -1540,4 +1642,10 @@ async def tailor_resume_structured(
         "optimization_notes": opt_notes,
         "llm_model": llm_model,
         "chunks_count": n_chunks,
+        "keyword_coverage_pct": keyword_coverage_pct,
+        "keyword_distribution": keyword_distribution,
+        "jd_keywords": jd_keywords,
+        "paper_format": paper_format,
+        "competency_keywords": competency_keywords,
+        "selected_project_count": len(ranked_projects),
     }

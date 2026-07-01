@@ -1,5 +1,5 @@
 ---
-covers: [backend/app/api/v1/jobs.py, backend/app/services/db_service.py, backend/app/models/job.py]
+covers: [backend/app/api/v1/jobs.py, backend/app/agents/job_workflow.py, backend/app/services/db_service.py, backend/app/models/job.py]
 status: active
 last_verified: 2026-06-28
 ---
@@ -12,7 +12,7 @@ Lets users search for jobs (via LinkedIn and SearXNG aggregation), browse stored
 ## Behavior Specification
 - **Inputs:** plain-text search query + optional location (`POST /search`), query parameters for filtering/pagination/sorting (`GET /jobs`), or a job ObjectId (`GET /jobs/{job_id}`)
 - **Process:**
-  1. `POST /search` — receives `{user_input: string, location?: string}`, delegates to `search_jobs_workflow` which collects results from LinkedIn, SearXNG, and ATS scrapers (greenhouse, lever, ashby, workday), then persists every result to MongoDB via `save_jobs` (upserts by URL with `search_query` and `search_location`, drops jobs without a URL). Returns the result list and a count of saved records.
+   1. `POST /search` — receives `{user_input: string, location?: string}`, delegates to `search_jobs_workflow` which collects results from LinkedIn, SearXNG, and ATS scrapers (greenhouse, lever, ashby, workday). After location filtering, Phase 4 browses ATS job URLs via Camofox to enrich missing fields (description, skills, job_type) — uses `browse_extract` with Ollama if available (free), otherwise `browse_fetch` (no LLM). Then persists every result to MongoDB via `save_jobs` (upserts by URL with `search_query` and `search_location`, drops jobs without a URL). Returns the result list and a count of saved records.
   2. `GET /jobs` — queries stored jobs with optional filters (`source`, `job_type`, `location` regex, full-text `q`), paginates (`page`, `limit`), sorts (`sort_by` in `created_at|updated_at|title|company|score`, `sort_order` `asc|desc`). On full-text search, sort is forced to descending text score regardless of `sort_by`/`sort_order`.
   3. `GET /jobs/{job_id}` — fetches the single job document, converts `_id` to string, serializes `datetime` fields to ISO strings, then enriches the response with the latest uploaded resume (`active_resume`) and the latest tailor session for this job (`tailoring_status`).
 - **Outputs:**
@@ -89,6 +89,7 @@ Called with `search_query="test"`.
 
 ## Key Files
 - `backend/app/api/v1/jobs.py` — router definition, three endpoints
+- `backend/app/agents/job_workflow.py` — search orchestration (LinkedIn, SearXNG, ATS), Phase 4 ATS browsing
 - `backend/app/services/db_service.py` — `save_jobs`, `get_jobs`, `get_job_by_id`, `get_latest_resume`, `get_tailor_session_for_job`
 - `backend/app/models/job.py` — Pydantic request/response models
 - `backend/tests/test_db_service.py` — tests for `save_jobs`
@@ -101,3 +102,4 @@ Called with `search_query="test"`.
 
 ## Open Issues
 - No integration tests for the `location` filter on `POST /search` — existing `test_integration.py` covers job search without a location parameter.
+- Phase 4 ATS browsing runs after location filter; no timeout/retry config specific to ATS browsing (reuses `SETTLE_SECONDS` and `MAX_SNAPSHOT_CHARS` from settings).

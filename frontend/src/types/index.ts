@@ -146,4 +146,16 @@ export interface ResumeTailorResponse {
   tailored_text: string;
   cover_letter: string;
   download_urls: DownloadUrls;
+  // ATS optimisation metadata
+  keyword_coverage_pct?: number;
+  paper_format?: string;
+  jd_keywords?: string[];
+  competency_keywords?: string[];
+  selected_project_count?: number;
+  keyword_distribution?: {
+    summary?: string[];
+    experience?: string[];
+    skills?: string[];
+    projects?: string[];
+  };
 }

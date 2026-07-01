@@ -28,6 +28,7 @@ from app.services.resume_parser import parse_resume_text
 from app.services.structured_tailor import tailor_resume_structured as run_structured_tailor
 from app.services.cover_letter import generate_cover_letter
 from app.services.db_service import save_resume, get_resume_by_id, save_tailor_session
+from app.services.ats_location import paper_format_to_playwright_format
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -329,6 +330,12 @@ async def tailor_resume_structured(
     ats_missing = result["ats_keywords_missing"]
     opt_notes = result["optimization_notes"]
     llm_model = result["llm_model"]
+    keyword_coverage_pct = result.get("keyword_coverage_pct", 0.0)
+    paper_format = result.get("paper_format", "letter")
+    jd_keywords = result.get("jd_keywords", [])
+    competency_keywords = result.get("competency_keywords", [])
+    selected_project_count = result.get("selected_project_count", 0)
+    keyword_distribution = result.get("keyword_distribution", {})
 
     # Extract plain text from HTML
     try:
@@ -364,7 +371,10 @@ async def tailor_resume_structured(
     download_urls = StructuredTailorDownloadUrls()
     try:
         docx_bytes = html_to_docx(tailored_html)
-        pdf_bytes = await html_to_pdf_async(tailored_html)
+        pdf_bytes = await html_to_pdf_async(
+            tailored_html,
+            format=paper_format_to_playwright_format(paper_format),
+        )
         cover_pdf_bytes = generate_pdf(cover_letter)
 
         session_id = uuid.uuid4().hex
@@ -426,6 +436,11 @@ async def tailor_resume_structured(
                 "ats_keywords_matched": ats_matched,
                 "ats_keywords_missing": ats_missing,
                 "optimization_notes": opt_notes,
+                "keyword_coverage_pct": keyword_coverage_pct,
+                "paper_format": paper_format,
+                "jd_keywords": jd_keywords,
+                "competency_keywords": competency_keywords,
+                "selected_project_count": selected_project_count,
             })
         except Exception as e:
             log.warning(
@@ -475,6 +490,12 @@ async def tailor_resume_structured(
         ats_keywords_missing=ats_missing,
         optimization_notes=opt_notes,
         llm_model=llm_model,
+        keyword_coverage_pct=keyword_coverage_pct,
+        paper_format=paper_format,
+        jd_keywords=jd_keywords,
+        competency_keywords=competency_keywords,
+        selected_project_count=selected_project_count,
+        keyword_distribution=keyword_distribution,
     )
 
 

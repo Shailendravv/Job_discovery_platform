@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ExternalLink, Upload, CloudUpload, CheckCircle, Download, Sparkles, FileText, AlertCircle, X } from "lucide-react";
 import { api, ApiError } from "@/services/api";
-import { env } from "@/config/env";
 import type { JobDetail, ResumeUploadResponse, ResumeTailorResponse } from "@/types";
 
 export const JobDetailsView: React.FC = () => {
@@ -568,6 +567,53 @@ export const JobDetailsView: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* ATS Optimisation Metrics */}
+              {tailorResult.keyword_coverage_pct !== undefined && (
+                <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-600">ATS Match</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                      tailorResult.keyword_coverage_pct >= 70
+                        ? 'bg-green-100 text-green-700'
+                        : tailorResult.keyword_coverage_pct >= 50
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}>
+                      {tailorResult.keyword_coverage_pct}%
+                    </span>
+                  </div>
+                  {tailorResult.paper_format && (
+                    <p className="text-[10px] text-slate-400 mb-2">
+                      Format: {tailorResult.paper_format === 'letter' ? 'Letter (US/Canada)' : 'A4 (Rest of World)'}
+                    </p>
+                  )}
+                  {tailorResult.selected_project_count !== undefined && (
+                    <p className="text-[10px] text-slate-400 mb-2">
+                      {tailorResult.selected_project_count} most relevant projects selected
+                    </p>
+                  )}
+                  {tailorResult.jd_keywords && tailorResult.jd_keywords.length > 0 && (
+                    <details className="text-[11px]">
+                      <summary className="cursor-pointer text-blue-600 hover:text-blue-800 font-medium">
+                        {tailorResult.ats_keywords_matched?.length || 0}/{tailorResult.jd_keywords.length} keywords matched
+                      </summary>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {tailorResult.jd_keywords.map((kw, i) => {
+                          const isMatched = tailorResult.ats_keywords_matched?.includes(kw);
+                          return (
+                            <span key={i} className={`px-2 py-0.5 rounded text-[10px] ${
+                              isMatched ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {kw}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
 
               {/* Download buttons */}
               <div className="flex flex-col gap-2">

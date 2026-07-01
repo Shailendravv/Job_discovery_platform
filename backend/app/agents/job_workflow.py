@@ -12,7 +12,7 @@ import difflib
 from typing import List, Optional
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
-from app.agents.tools.browse_jobs import browse_extract
+from app.agents.tools.browse_jobs import browse_extract, browse_fetch
 from app.agents.search_provider import provider
 from app.agents.ats_workflow import scan_ats_companies
 from app.core.config import settings
@@ -57,6 +57,8 @@ JOB_EXTRACT_SCHEMA = {
         },
     },
 }
+
+_ATS_SOURCES = frozenset({"greenhouse", "lever", "ashby", "workday"})
 
 def _parse_user_input(user_input: str) -> dict:
     """Fallback plain-text parser if LLM fails."""
@@ -435,6 +437,53 @@ async def search_jobs_workflow(user_input: str, location: Optional[str] = None) 
         log.info("[workflow] %d jobs after location filter '%s' (from %d)", len(jobs), location, before)
     elif location and location.lower() == "remote":
         log.info("[workflow] location='remote' — skipping location filter, returning %d jobs", len(jobs))
+
+    # ── Phase 4: Browse ATS job URLs for enriched details ────────────────────
+    # Only processes jobs that survived location filtering.
+    # Uses browse_extract (with local Ollama) if LLM_PROVIDER=ollama, else
+    # browse_fetch (no LLM at all).
+    _use_llm = (settings.LLM_PROVIDER or "").lower() == "ollama"
+    ats_to_browse = [
+        j for j in jobs
+        if j.get("source") in _ATS_SOURCES and j.get("url")
+    ]
+    if ats_to_browse:
+        log.info(
+            "[workflow] browsing %d ATS job URLs (llm=%s)",
+            len(ats_to_browse), _use_llm,
+        )
+        _sem = asyncio.Semaphore(5)
+
+        async def _browse_one(job: dict) -> None:
+            async with _sem:
+                url: str = job["url"]
+                try:
+                    if _use_llm:
+                        raw_json = await browse_extract(url, JOB_EXTRACT_SCHEMA)
+                        extracted = json.loads(raw_json) if isinstance(raw_json, str) else raw_json
+                        if extracted and not all(v is None for v in extracted.values()):
+                            if extracted.get("description"):
+                                job["description"] = extracted["description"]
+                            if extracted.get("skills"):
+                                job["skills"] = extracted["skills"]
+                            if extracted.get("salary") and not job.get("salary"):
+                                job["salary"] = extracted["salary"]
+                            if extracted.get("location") and not job.get("location"):
+                                job["location"] = extracted["location"]
+                            if extracted.get("job_type"):
+                                job["job_type"] = extracted["job_type"]
+                    else:
+                        raw = await browse_fetch(url)
+                        if raw and not raw.startswith("Error"):
+                            job["description"] = raw
+                            if not job.get("skills"):
+                                job["skills"] = extract_skills_from_text(raw)
+                            if job.get("job_type", "unknown") == "unknown":
+                                job["job_type"] = _categorize_job_type({}, raw)
+                except Exception as exc:
+                    log.warning("[workflow] ATS browse failed for %s: %s", url, exc)
+
+        await asyncio.gather(*[_browse_one(j) for j in ats_to_browse])
 
     log.info(
         "[workflow] done — %d jobs extracted (ats=%d, searxng=%d, linkedin=%d)",

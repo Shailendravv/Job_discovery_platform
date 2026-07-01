@@ -132,8 +132,13 @@ def html_to_docx(html_content: str) -> bytes:
 #  HTML → PDF
 # ═══════════════════════════════════════════════════════════════
 
-async def html_to_pdf_async(html_content: str) -> bytes:
+async def html_to_pdf_async(html_content: str, format: str = "Letter") -> bytes:
     """Convert HTML to PDF asynchronously using Playwright (headless Chromium).
+
+    Args:
+        html_content: Full HTML document string.
+        format: Paper size — "Letter" (US/Canada) or "A4" (rest of world).
+
     Runs the synchronous Playwright call in a thread pool to avoid blocking
     the async event loop. Falls back to reportlab if Playwright unavailable."""
     import asyncio
@@ -141,7 +146,7 @@ async def html_to_pdf_async(html_content: str) -> bytes:
     if HAS_PLAYWRIGHT:
         try:
             loop = asyncio.get_running_loop()
-            pdf_bytes = await loop.run_in_executor(None, _playwright_pdf, html_content)
+            pdf_bytes = await loop.run_in_executor(None, _playwright_pdf, html_content, format)
             return pdf_bytes
         except Exception as e:
             log.warning("Playwright PDF generation failed: %s", e)
@@ -153,8 +158,13 @@ async def html_to_pdf_async(html_content: str) -> bytes:
     return generate_pdf(text)
 
 
-def _playwright_pdf(html_content: str) -> bytes:
-    """Render HTML to PDF using headless Chromium via Playwright."""
+def _playwright_pdf(html_content: str, format: str = "Letter") -> bytes:
+    """Render HTML to PDF using headless Chromium via Playwright.
+
+    Args:
+        html_content: Full HTML document string.
+        format: Paper size — "Letter" or "A4".
+    """
     with tempfile.TemporaryDirectory() as tmp_dir:
         html_path = os.path.join(tmp_dir, "resume.html")
         pdf_path = os.path.join(tmp_dir, "resume.pdf")
@@ -168,12 +178,12 @@ def _playwright_pdf(html_content: str) -> bytes:
             page.goto(f"file://{html_path}")
             page.pdf(
                 path=pdf_path,
-                format="letter",
+                format=format,
                 margin={
-                    "top": "0.5in",
-                    "right": "0.7in",
-                    "bottom": "0.5in",
-                    "left": "0.7in",
+                    "top": "0.6in",
+                    "right": "0.6in",
+                    "bottom": "0.6in",
+                    "left": "0.6in",
                 },
                 print_background=True,
             )

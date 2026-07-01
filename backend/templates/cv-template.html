@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face {
+    font-family: 'Space Grotesk';
+    src: url('fonts/SpaceGrotesk-Variable.woff2') format('woff2');
+    font-weight: 300 700;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'DM Sans';
+    src: url('fonts/DMSans-Variable.woff2') format('woff2');
+    font-weight: 400 700;
+    font-display: swap;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #1a1a1a;
+    max-width: {{PAGE_WIDTH}};
+    margin: 0 auto;
+    padding: 0.6in;
+    background: #fff;
+}
+.header { margin-bottom: 16px; }
+.header-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 2px;
+}
+.header-gradient {
+    height: 2px;
+    background: linear-gradient(to right, hsl(187, 74%, 32%), hsl(270, 70%, 45%));
+    margin: 6px 0 8px 0;
+}
+.contact-row { font-size: 10px; color: #444; display: flex; flex-wrap: wrap; gap: 4px 0; }
+.contact-row a { color: hsl(270, 70%, 45%); text-decoration: none; }
+.separator { color: #999; margin: 0 6px; }
+.section-header {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: hsl(187, 74%, 32%);
+    margin-top: 14px;
+    margin-bottom: 6px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid #e0e0e0;
+}
+.summary-text { font-size: 11px; line-height: 1.5; color: #333; }
+.competency-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    margin-top: 6px;
+    margin-bottom: 4px;
+}
+.competency-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 500;
+    color: hsl(270, 70%, 35%);
+    background: hsl(270, 70%, 95%);
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+.experience-entry { margin-top: 8px; }
+.experience-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+.role-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+.company-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    color: hsl(270, 70%, 45%);
+}
+.duration { font-size: 10px; color: #666; }
+.experience-bullets {
+    margin-top: 3px;
+    padding-left: 18px;
+    list-style: disc;
+}
+.experience-bullets li {
+    margin-bottom: 2px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #333;
+}
+.project-entry { margin-top: 6px; }
+.project-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+.project-description { font-size: 11px; line-height: 1.5; color: #333; margin-top: 1px; }
+.education-entry { font-size: 11px; line-height: 1.5; color: #333; margin-top: 4px; }
+.cert-entry { font-size: 11px; line-height: 1.5; color: #333; margin-top: 2px; }
+.skills-text { font-size: 11px; line-height: 1.5; color: #333; }
+</style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-name">{{NAME}}</div>
+    <div class="header-gradient"></div>
+    <div class="contact-row">{{CONTACT_ITEMS}}</div>
+</div>
+
+{{SECTION_SUMMARY}}
+{{SUMMARY_HTML}}
+
+{{SECTION_COMPETENCIES}}
+{{COMPETENCIES_HTML}}
+
+{{SECTION_EXPERIENCE}}
+{{EXPERIENCE_HTML}}
+
+{{SECTION_PROJECTS}}
+{{PROJECTS_HTML}}
+
+{{SECTION_EDUCATION}}
+{{EDUCATION_HTML}}
+
+{{SECTION_CERTIFICATIONS}}
+{{CERTIFICATIONS_HTML}}
+
+{{SECTION_SKILLS}}
+{{SKILLS_HTML}}
+
+</body>
+</html>
