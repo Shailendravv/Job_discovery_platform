@@ -1,0 +1,178 @@
+# ATS companies configuration.
+#
+# Each entry must have a ``name`` and ``careers_url``. Providers are auto-detected
+# from the URL pattern (greenhouse -> ashby -> lever -> workday). Set ``enabled: false``
+# to skip a company.
+#
+# Greenhouse companies can optionally set an explicit ``api`` URL to bypass
+# auto-detection, though it's not required -- the provider derives it from the
+# ``careers_url`` pattern.
+#
+# NOTE: Only companies that returned 200 OK are kept. 404/failed companies
+# have been removed to avoid wasted API calls.
+
+ats_companies:
+  # ===========================
+  # ASHBY (200 OK)
+  # ===========================
+  - name: LangChain
+    careers_url: https://jobs.ashbyhq.com/LangChain
+
+  - name: Baseten
+    careers_url: https://jobs.ashbyhq.com/baseten
+
+  - name: Modal
+    careers_url: https://jobs.ashbyhq.com/modal
+
+  - name: Clerk
+    careers_url: https://jobs.ashbyhq.com/clerk
+
+  - name: Warp
+    careers_url: https://jobs.ashbyhq.com/warp
+
+  - name: Campfire
+    careers_url: https://jobs.ashbyhq.com/campfire
+
+  - name: Metriport
+    careers_url: https://jobs.ashbyhq.com/metriport
+
+  - name: Encord
+    careers_url: https://jobs.ashbyhq.com/encord
+
+  - name: Bland AI
+    careers_url: https://jobs.ashbyhq.com/bland
+
+  - name: Sierra
+    careers_url: https://jobs.ashbyhq.com/sierra
+
+  - name: Read AI
+    careers_url: https://jobs.ashbyhq.com/read-ai
+
+  - name: Vapi
+    careers_url: https://jobs.ashbyhq.com/vapi
+
+  - name: Nooks
+    careers_url: https://jobs.ashbyhq.com/nooks
+
+  - name: Decagon
+    careers_url: https://jobs.ashbyhq.com/decagon
+
+  - name: Factory
+    careers_url: https://jobs.ashbyhq.com/factory
+
+  - name: Hightouch
+    careers_url: https://jobs.ashbyhq.com/hightouch
+
+  - name: Character AI
+    careers_url: https://jobs.ashbyhq.com/character
+
+  - name: Mercor
+    careers_url: https://jobs.ashbyhq.com/mercor
+
+  - name: Perplexity
+    careers_url: https://jobs.ashbyhq.com/perplexity
+
+  - name: Rogo
+    careers_url: https://jobs.ashbyhq.com/rogo
+
+  - name: Harvey AI
+    careers_url: https://jobs.ashbyhq.com/harvey
+
+  - name: Cognition AI
+    careers_url: https://jobs.ashbyhq.com/cognition
+
+  - name: Vellum
+    careers_url: https://jobs.ashbyhq.com/vellum
+
+  - name: Merge
+    careers_url: https://jobs.ashbyhq.com/merge
+
+  - name: Persona
+    careers_url: https://jobs.ashbyhq.com/persona
+
+  - name: Checkly
+    careers_url: https://jobs.ashbyhq.com/checkly
+
+  - name: TestGorilla
+    careers_url: https://jobs.ashbyhq.com/testgorilla
+
+  - name: AtoB
+    careers_url: https://jobs.ashbyhq.com/atob
+
+  - name: Pylon
+    careers_url: https://jobs.ashbyhq.com/pylon
+
+  - name: Rutter
+    careers_url: https://jobs.ashbyhq.com/rutter
+
+  - name: Graphite
+    careers_url: https://jobs.ashbyhq.com/graphite
+
+  - name: Finch
+    careers_url: https://jobs.ashbyhq.com/finch
+
+  - name: Stytch
+    careers_url: https://jobs.ashbyhq.com/stytch
+
+  - name: Incident.io
+    careers_url: https://jobs.ashbyhq.com/incident
+
+  - name: Neon
+    careers_url: https://jobs.ashbyhq.com/neon
+
+  # ===========================
+  # LEVER (200 OK)
+  # ===========================
+  - name: Superside
+    careers_url: https://jobs.lever.co/superside
+
+  - name: Spotify
+    careers_url: https://jobs.lever.co/spotify
+
+  - name: Kochava
+    careers_url: https://jobs.lever.co/kochava
+
+  # ===========================
+  # GREENHOUSE (200 OK)
+  # ===========================
+  - name: GitLab
+    careers_url: https://boards.greenhouse.io/gitlab
+
+  - name: Stripe
+    careers_url: https://boards.greenhouse.io/stripe
+
+  - name: Datadog
+    careers_url: https://boards.greenhouse.io/datadog
+
+  - name: Airbnb
+    careers_url: https://boards.greenhouse.io/airbnb
+
+  - name: Asana
+    careers_url: https://boards.greenhouse.io/asana
+
+  - name: Figma
+    careers_url: https://boards.greenhouse.io/figma
+
+  - name: Reddit
+    careers_url: https://boards.greenhouse.io/reddit
+
+  - name: Vercel
+    careers_url: https://boards.greenhouse.io/vercel
+
+  - name: Amplitude
+    careers_url: https://boards.greenhouse.io/amplitude
+
+  - name: Glossier
+    careers_url: https://boards.greenhouse.io/glossier
+
+  - name: Betterment
+    careers_url: https://boards.greenhouse.io/betterment
+
+  - name: Brex
+    careers_url: https://boards.greenhouse.io/brex
+
+  - name: Robinhood
+    careers_url: https://boards.greenhouse.io/robinhood
+
+  - name: Lyft
+    careers_url: https://boards.greenhouse.io/lyft

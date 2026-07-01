@@ -1,0 +1,8 @@
+start.sh
+logs
+
+# Secrets — never commit any .env file in the workspace
+.env
+.env.*
+secrets*
+!.env.example

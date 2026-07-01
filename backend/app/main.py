@@ -1,15 +1,32 @@
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import connect_db, close_db
 from app.api.v1 import jobs, resumes
+from app.core.config import settings
+from app.services.cloudinary_service import configure_cloudinary
 
+log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(
-    # level=logging.DEBUG,
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
 app = FastAPI(title="Job App API")
+
+# CORS – allow the frontend dev server to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",  # Vite default
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["jobs"])
 app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
@@ -18,6 +35,58 @@ app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
 @app.on_event("startup")
 async def startup():
     await connect_db()
+    from app.core.config import settings
+
+    log = logging.getLogger("startup")
+
+    # Configure Cloudinary
+    if (
+        settings.CLOUDINARY_CLOUD_NAME
+        and settings.CLOUDINARY_API_KEY
+        and settings.CLOUDINARY_API_SECRET
+    ):
+        try:
+            configure_cloudinary()
+            log.info("  CLOUDINARY                  : configured")
+        except Exception as e:
+            log.warning("  CLOUDINARY                  : configuration failed — %s", e)
+    else:
+        log.warning(
+            "  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)"
+        )
+
+    # Log LLM Provider Config
+    log.info("=== LLM Provider Config ===")
+    provider = settings.LLM_PROVIDER.lower().strip()
+    log.info("  LLM_PROVIDER               : %s", provider)
+    if provider == "ollama":
+        base_url = settings.OLLAMA_BASE_URL or settings.Ollama
+        model = settings.OLLAMA_MODEL or settings.MODEL_NAME
+        log.info("  OLLAMA_BASE_URL            : %s", base_url)
+        log.info("  OLLAMA_MODEL               : %s", model)
+    elif provider == "openrouter":
+        if settings.OPENROUTER_API_KEY:
+            log.info("  OPENROUTER                 : configured")
+        else:
+            log.warning("  OPENROUTER_API_KEY        : not configured")
+        model = settings.OPENROUTER_MODEL or "qwen/qwen3-coder:free"
+        log.info("  OPENROUTER_MODEL           : %s", model)
+        log.info("  OPENROUTER_FALLBACK_CHAIN  : 12 models configured")
+    log.info("  MODEL_TEMPERATURE          : %s", settings.MODEL_TEMPERATURE)
+    log.info("============================")
+
+    # Log legacy Groq status (for reference)
+    if settings.GROQ_API_KEY:
+        log.info(
+            "  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL
+        )
+
+    log.info("=== Search Provider Config ===")
+    log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)
+    log.info("  LINKEDIN_GUEST_API_ENABLED : %r", settings.LINKEDIN_GUEST_API_ENABLED)
+    log.info("  LINKEDIN_GUEST_API_LOCATION: %r", settings.LINKEDIN_GUEST_API_LOCATION)
+    log.info("  ATS_ENABLED                : %r", settings.ATS_ENABLED)
+    log.info("==============================")
 
 
 @app.on_event("shutdown")
