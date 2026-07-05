@@ -97,6 +97,12 @@ Your task is to tailor a resume for a specific job description while maintaining
 14. **Do not expand content beyond what is present in the original resume.** Rephrase and reword existing content only. Do not add new sentences, claims, achievements, details, technologies, or metrics that were not in the original resume data. **Crucially, do not copy content from the Experience or Projects sections into the Professional Summary.** The Summary should only rephrase what was already in the original summary — it should not become a digest of the entire resume.
 15. **Do not add new sub-headings, category labels, duration summaries, or meta-descriptions** to any section that were not present in the original resume.
 16. **Never add contact information (LinkedIn URLs, GitHub URLs, personal websites, portfolio links, or any social media profiles)** that were not present in the original resume. Only include contact details explicitly present in the resume data.
+17. **STRICT BULLET POINT COUNT PRESERVATION: Count the bullet points in each experience entry and the summary section. Your output must have EXACTLY the same number of bullet points as the original.** If the original has 9 bullet points under an experience entry, your output must have 9 bullet points — not 1 paragraph, not 3 bullets, but 9. Each bullet rewrites original content with better wording, but the count MUST match.
+18. **STRICT SUMMARY FORMAT PRESERVATION: If the Professional Summary in the original uses bullet points (•), your output must ALSO use bullet points (•). If the original uses a paragraph, your output must use a paragraph. NEVER convert between formats.**
+19. **STRICT TECHNOLOGY FABRICATION BAN: Never add technologies, cloud platforms, tools, or methodologies that are not explicitly listed in the original resume's skills section or described in the original experience/projects sections.** For example:
+    - If the resume lists "AWS (EC2, Lambda)" under Cloud & DevOps, do NOT add "Azure" or "GCP" as a core competency or skill unless they are explicitly present.
+    - If the resume does not mention "leadership" or "machine learning" as explicit skills, do NOT inject them into the summary or competency tags.
+    - Only surface what the candidate has actually listed. Do not infer related technologies.
 
 ---
 
@@ -159,6 +165,12 @@ CRITICAL — Anti-Copying & Format Preservation:
 * **Every claim must be directly quoted or closely paraphrased** from the experience, skills, or projects sections of the resume. If a capability is not present in the candidate's resume data, it must not appear in the summary.
 * The summary should sound like a genuine human-written professional profile — not a keyword-stuffed ATS target.
 
+BULLET POINT COUNT ENFORCEMENT:
+- If the original summary uses bullet points — count them. Output the same number of bullet points.
+- Each bullet must begin with • (bullet character) on its own line.
+- NEVER merge bullet points into a single paragraph.
+- NEVER split a paragraph into bullet points if the original is a paragraph.
+
 IMPORTANT: Preserve the original summary's length, detail, context, and paragraph structure.
 Do NOT shorten it. Do NOT expand it with new content. Maintain all specifics about years of experience,
 technologies, domain expertise, and key achievements exactly as stated.
@@ -201,6 +213,7 @@ You may:
 CRITICAL:
 * **Preserve the original structure** — do not add new sub-headings, category labels, duration summaries, or meta-descriptions that were not present in the original.
 * **Preserve the original description format.** If the original description is a paragraph → keep it as a paragraph. If it uses bullet points → keep bullet points. Do NOT convert between formats.
+* **BULLET POINT COUNT: Count the exact number of bullet points in each experience entry. Your output MUST have the same number.** For example, if an entry has 9 bullet points (each starting with •), your output must have exactly 9 bullet points (each starting with •). Reword each bullet individually — do not merge, split, or drop any.
 * **Do not expand the description** beyond the original level of detail. Only rephrase existing content.
 * You must not add technologies that are absent from the candidate's experience.
 * Do not add new bullet points or achievements that were not in the original.
@@ -844,12 +857,26 @@ def _merge_missing_entries(parsed: dict, original: dict) -> dict:
     """
     merged = dict(parsed)
 
-    # ── Projects (match by name) ──
+    # ── Projects (match by name — fuzzy substring match)
+    # LLMs often rename projects (e.g. "Client Name: ABC\nProject Name: Foo"
+    # becomes just "Foo"). We use substring matching: if any returned project
+    # name is a substring of an original project name (or vice versa), treat as match.
     orig_projects: list[dict] = original.get("projects", []) or []
     ret_projects: list[dict] = merged.get("projects", []) or []
     if orig_projects:
-        ret_names = {p.get("name", "") for p in ret_projects}
-        missing = [p for p in orig_projects if p.get("name", "") not in ret_names]
+        def _project_matches(orig: dict, returned: list[dict]) -> bool:
+            orig_name = (orig.get("name", "") or "").lower().strip()
+            if not orig_name:
+                return False
+            for r in returned:
+                ret_name = (r.get("name", "") or "").lower().strip()
+                if not ret_name:
+                    continue
+                if ret_name in orig_name or orig_name in ret_name:
+                    return True
+            return False
+
+        missing = [p for p in orig_projects if not _project_matches(p, ret_projects)]
         if missing:
             log.warning(
                 "LLM dropped %d/%d project(s) — merging back: %s",

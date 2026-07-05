@@ -17,13 +17,21 @@ class ExperienceEntry(BaseModel):
     description: Optional[str] = None
 
 
+class ProjectEntry(BaseModel):
+    """A project entry for the structured resume."""
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
 class ParsedResumeData(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    summary: Optional[str] = None
     education: List[EducationEntry] = Field(default_factory=list)
     experience: List[ExperienceEntry] = Field(default_factory=list)
     skills: List[str] = Field(default_factory=list)
+    projects: List[ProjectEntry] = Field(default_factory=list)
     languages: List[str] = Field(default_factory=list)
     certifications: List[str] = Field(default_factory=list)
 
@@ -37,12 +45,6 @@ class ResumeUploadResponse(BaseModel):
 
 
 # ── Structured Tailor Models (PII-safe, chunked JSON pipeline) ──
-
-class ProjectEntry(BaseModel):
-    """A project entry for the structured resume."""
-    name: Optional[str] = None
-    description: Optional[str] = None
-
 
 class TailoredResumeData(BaseModel):
     """The tailored resume output schema matching the ATS system prompt."""

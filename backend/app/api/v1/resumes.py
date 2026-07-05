@@ -173,6 +173,7 @@ def _sanitize_parsed_data(data: dict) -> dict:
     """
     safe: dict = {
         "name": str(data.get("name") or ""),
+        "summary": str(data.get("summary") or ""),
     }
 
     # Education: filter out entries with null year, or default year to 0
@@ -213,6 +214,20 @@ def _sanitize_parsed_data(data: dict) -> dict:
         if any(v for v in safe_entry.values()):
             safe_experience.append(safe_entry)
     safe["experience"] = safe_experience
+
+    # Projects: filter out entries where all fields are empty
+    raw_projects = data.get("projects", []) or []
+    safe_projects = []
+    for entry in raw_projects:
+        if not isinstance(entry, dict):
+            continue
+        safe_entry = {
+            "name": str(entry.get("name") or ""),
+            "description": str(entry.get("description") or ""),
+        }
+        if any(v for v in safe_entry.values()):
+            safe_projects.append(safe_entry)
+    safe["projects"] = safe_projects
 
     # Skills, languages, certifications: filter out null/empty items
     for key in ("skills", "languages", "certifications"):

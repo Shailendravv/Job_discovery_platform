@@ -14,13 +14,13 @@ log = logging.getLogger(__name__)
 def rank_projects_by_jd(
     projects: list[dict],
     jd_keywords: list[str],
-    max_projects: int = 4,
+    max_projects: int = 999,
 ) -> list[dict]:
     """
     Rank projects by JD keyword overlap and keep top *max_projects*.
 
     Each project gets a relevance score = number of unique JD keywords
-    found in its name + description.
+    found in its name + description. Default max is 999 to preserve all projects.
     """
     if not projects or not jd_keywords:
         return projects[:max_projects] if max_projects else projects
