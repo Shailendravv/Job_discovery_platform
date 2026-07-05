@@ -15,7 +15,7 @@ _HEADER_CACHE: dict[str, str] = {}
 
 def _section_header(title: str) -> str:
     if title not in _HEADER_CACHE:
-        _HEADER_CACHE[title] = f'<div class="section-header">{_xml_escape(title)}</div>'
+        _HEADER_CACHE[title] = f'<h2 class="section-header">{_xml_escape(title)}</h2>'
     return _HEADER_CACHE[title]
 
 
@@ -115,11 +115,10 @@ def build_experience_html(experience: list[dict]) -> str:
         description = exp.get("description", "")
 
         parts.append('<div class="experience-entry">')
-        parts.append('<div class="experience-header">')
-        parts.append(f'<span class="role-title">{title}</span>')
+        title_line = title
         if company:
-            parts.append(f'<span class="company-name">{company}</span>')
-        parts.append('</div>')
+            title_line += f' — {company}'
+        parts.append(f'<h3 class="experience-header">{title_line}</h3>')
         if duration:
             parts.append(f'<div class="duration">{duration}</div>')
 
@@ -144,7 +143,7 @@ def build_projects_html(projects: list[dict]) -> str:
         name = _xml_escape(proj.get("name", ""))
         desc = proj.get("description", "")
         parts.append('<div class="project-entry">')
-        parts.append(f'<div class="project-name">{name}</div>')
+        parts.append(f'<h4 class="project-name">{name}</h4>')
         if desc:
             lines = [l.strip() for l in desc.split("\n") if l.strip()]
             if len(lines) > 1:
@@ -167,14 +166,14 @@ def build_education_html(education: list[dict]) -> str:
         year = edu.get("year", "")
         text_parts = [p for p in [degree, institution, str(year) if year else ""] if p]
         if text_parts:
-            parts.append(f'<div class="education-entry">{", ".join(text_parts)}</div>')
+            parts.append(f'<p class="education-entry">{", ".join(text_parts)}</p>')
     return "\n".join(parts)
 
 
 def build_certifications_html(certifications: list[str]) -> str:
     """Build Certifications section HTML (preserved data)."""
     return "\n".join(
-        f'<div class="cert-entry">{_xml_escape(c)}</div>'
+        f'<p class="cert-entry">{_xml_escape(c)}</p>'
         for c in certifications
     )
 

@@ -541,6 +541,8 @@ async def download_file_from_url(request: DownloadFromUrlRequest):
             media_type=(
                 "application/pdf"
                 if parsed["file_format"] == "pdf"
+                else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                if parsed["filename"].endswith(".docx")
                 else "application/octet-stream"
             ),
             headers={

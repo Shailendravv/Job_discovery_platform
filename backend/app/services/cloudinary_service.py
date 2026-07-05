@@ -193,10 +193,14 @@ def parse_cloudinary_url(cloudinary_url: str) -> dict:
     path = match.group(2)
 
     if resource_type == "raw":
-        # Raw URLs: no format extension
+        # Raw URLs: no format extension in URL
         public_id = path
         file_format = None
         filename = path.rsplit("/", 1)[-1] or "download"
+        # All raw uploads in this system are DOCX — append extension so the
+        # browser recognises the file type when downloaded.
+        if not any(filename.lower().endswith(ext) for ext in (".docx", ".pdf", ".zip", ".txt", ".png", ".jpg")):
+            filename += ".docx"
     else:
         # Image URLs: path ends with .{format}
         if "." not in path:
