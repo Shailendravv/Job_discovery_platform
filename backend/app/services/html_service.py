@@ -115,12 +115,31 @@ def html_to_docx(html_content: str) -> bytes:
         raise RuntimeError("htmldocx is required for HTML→DOCX conversion")
 
     from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
 
     # Strip the full document wrapper — htmldocx expects just body-level HTML
     body_html = _extract_body_html(html_content)
 
-    parser = HtmlToDocx()
     doc = Document()
+
+    # ── Add bottom border to Heading 2 and 3 (matches PDF .section-header border-bottom) ──
+    for level in (2, 3):
+        style = doc.styles[f"Heading {level}"]
+        pPr = style.element.get_or_add_pPr()
+        # Check if a border element already exists
+        existing = pPr.findall(qn("w:pBdr"))
+        if not existing:
+            pBdr = OxmlElement("w:pBdr")
+            bottom = OxmlElement("w:bottom")
+            bottom.set(qn("w:val"), "single")
+            bottom.set(qn("w:sz"), "4")       # ~0.25 pt
+            bottom.set(qn("w:space"), "4")     # gap between text and line
+            bottom.set(qn("w:color"), "E0E0E0")
+            pBdr.append(bottom)
+            pPr.append(pBdr)
+
+    parser = HtmlToDocx()
     parser.add_html_to_document(body_html, doc)
 
     buffer = io.BytesIO()

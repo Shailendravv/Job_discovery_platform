@@ -49,7 +49,7 @@ def render_cv_template(
         "{{SECTION_SUMMARY}}": _section_header("Professional Summary") if summary_text else "",
         "{{SUMMARY_HTML}}": f'<p class="summary-text">{_xml_escape(summary_text)}</p>' if summary_text else "",
         "{{SECTION_COMPETENCIES}}": _section_header("Core Competencies") if competency_tags else "",
-        "{{COMPETENCIES_HTML}}": f'<div class="competency-grid">{competency_tags}</div>' if competency_tags else "",
+        "{{COMPETENCIES_HTML}}": f'<p class="competency-grid">{competency_tags}</p>' if competency_tags else "",
         "{{SECTION_EXPERIENCE}}": _section_header("Work Experience") if experience_html else "",
         "{{EXPERIENCE_HTML}}": experience_html,
         "{{SECTION_PROJECTS}}": _section_header("Projects") if projects_html else "",
@@ -92,14 +92,14 @@ def build_contact_items(
     result = ""
     for i, part in enumerate(parts):
         if i > 0:
-            result += '<span class="separator">|</span>'
+            result += '<span class="separator"> | </span>'
         result += part
     return result
 
 
 def build_competency_tags(keywords: list[str]) -> str:
     """Build competency tag HTML from a list of keyword phrases."""
-    return "".join(
+    return " ".join(
         f'<span class="competency-tag">{_xml_escape(kw)}</span>'
         for kw in keywords
     )
@@ -120,7 +120,7 @@ def build_experience_html(experience: list[dict]) -> str:
             title_line += f' — {company}'
         parts.append(f'<h3 class="experience-header">{title_line}</h3>')
         if duration:
-            parts.append(f'<div class="duration">{duration}</div>')
+            parts.append(f'<p class="duration">{duration}</p>')
 
         if description:
             bullets = [b.strip() for b in description.split("\n") if b.strip()]
