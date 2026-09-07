@@ -1,0 +1,36 @@
+{
+  "total": 373,
+  "jobPostings": [
+    {
+      "title": "Presales- HCM Sr. Solution Consultant- Professional Services",
+      "externalPath": "/job/USA-Remote/Presales--HCM-Solution-Consultant--PBS_JR-0109751",
+      "locationsText": "53 Locations",
+      "postedOn": "Posted 2 Days Ago",
+      "remoteType": "Remote",
+      "bulletFields": [
+        "JR-0109751"
+      ]
+    },
+    {
+      "title": "Senior Partner Enablement Program Manager",
+      "externalPath": "/job/USA-GA-Atlanta/Principal--Partner-Enablement_JR-0108813",
+      "locationsText": "20 Locations",
+      "postedOn": "Posted 2 Days Ago",
+      "remoteType": "Flex",
+      "bulletFields": [
+        "JR-0108813"
+      ]
+    },
+    {
+      "title": "Engagement Associate",
+      "externalPath": "/job/Sweden-Stockholm/Engagement-Associate_JR-0108645",
+      "locationsText": "Sweden, Stockholm",
+      "postedOn": "Posted 2 Days Ago",
+      "remoteType": "Onsite",
+      "bulletFields": [
+        "JR-0108645"
+      ]
+    }
+  ],
+  "userAuthenticated": false
+}

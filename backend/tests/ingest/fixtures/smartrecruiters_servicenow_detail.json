@@ -1,0 +1,139 @@
+{
+  "id": "744000147799604",
+  "name": "Manager, Product Design",
+  "uuid": "cc4f2ea6-f63e-4a2c-86ac-bcc143891139",
+  "jobId": "e560994d-0a73-4b94-b001-f639afbb256a",
+  "jobAdId": "9ecaf469-9518-464a-928f-4dd22f61e89f",
+  "defaultJobAd": true,
+  "refNumber": "JB0074989",
+  "company": {
+    "name": "ServiceNow",
+    "identifier": "ServiceNow"
+  },
+  "location": {
+    "city": "Hyderabad",
+    "country": "in",
+    "address": "Salarpuria Sattva Knowledge City Knowledge City, Unit II, 17 to 10 Floor Survey No. 83/1, Serilingampally Mandal",
+    "postalCode": "500081",
+    "remote": false,
+    "hybrid": true,
+    "fullLocation": "Hyderabad, , India"
+  },
+  "customField": [
+    {
+      "fieldId": "60345fa28b4ba8595bef1863",
+      "fieldLabel": "Recruiting Team",
+      "valueId": "professional",
+      "valueLabel": "Professional"
+    },
+    {
+      "fieldId": "60345e1a0b24a127cbdfa148",
+      "fieldLabel": "Employee Type",
+      "valueId": "0082f6cbe6154da19322cbab1f6aa5af",
+      "valueLabel": "Regular"
+    },
+    {
+      "fieldId": "5f63a78f1dae5c5c4e54ba2b",
+      "fieldLabel": "Department",
+      "valueId": "2907670",
+      "valueLabel": "User Experience Design"
+    },
+    {
+      "fieldId": "COUNTRY",
+      "fieldLabel": "Country/Region",
+      "valueId": "in",
+      "valueLabel": "India"
+    },
+    {
+      "fieldId": "5f63a78f1dae5c5c4e54ba2a",
+      "fieldLabel": "Brands",
+      "valueId": "default",
+      "valueLabel": "ServiceNow"
+    },
+    {
+      "fieldId": "60345d5c5165a31b17288279",
+      "fieldLabel": "Region",
+      "valueId": "858884996eea4a49baa6231279f39054",
+      "valueLabel": "APAC - Asia Pacific"
+    },
+    {
+      "fieldId": "603462175165a31b1728827d",
+      "fieldLabel": "Cost Center",
+      "valueId": "CC6054",
+      "valueLabel": "6054 CSM Design"
+    },
+    {
+      "fieldId": "6034601b43915a29a4b3389b",
+      "fieldLabel": "Job Location",
+      "valueId": "L_HYD002",
+      "valueLabel": "Knowledge City, Unit II, 17 to 10 Floor, Survey No. 83/1, Serilingampally Mandal, Hyderabad- 500081, Telangana, India(L_HYD002)"
+    },
+    {
+      "fieldId": "618ed92b8f5e5f110e5bfb95",
+      "fieldLabel": "Work Persona",
+      "valueId": "5530c877-6b63-4bf5-bde8-215ef35bf172",
+      "valueLabel": "Flexible or Remote"
+    },
+    {
+      "fieldId": "690cc0e8c682c3dbadaa7d73",
+      "fieldLabel": "Job Posting Type",
+      "valueId": "professional",
+      "valueLabel": "Professional"
+    }
+  ],
+  "releasedDate": "2026-09-07T03:09:22.744Z",
+  "creator": {
+    "name": "Suman Yarlapalli",
+    "avatarUrl": ""
+  },
+  "postingUrl": "https://jobs.smartrecruiters.com/ServiceNow/744000147799604-manager-product-design",
+  "applyUrl": "https://jobs.smartrecruiters.com/ServiceNow/744000147799604-manager-product-design?oga=true",
+  "referralUrl": "https://jobs.smartrecruiters.com/external-referrals/company/ServiceNow/publication/cc4f2ea6-f63e-4a2c-86ac-bcc143891139?dcr_ci=ServiceNow",
+  "jobAd": {
+    "sections": {
+      "companyDescription": {
+        "title": "Company Description",
+        "text": "<p>It all started when engineer Fred Luddy wrote code that automated a tedious task for his coworker, Phyllis. She cried tears of joy. That moment inspired Fred to build a company that could do that for everyone—freeing people from busywork so they could focus on meaningful work. Today, ServiceNow is the AI control tower for business reinvention. Our ServiceNow AI platform brings together any AI, any data, and any workflow— helping 85% of the Fortune 500® work smarter, faster, and better. We're building an AI-native culture where technology and talent are unstoppable together. And we're just getting started.</p><p>Join us to put AI to work for people.</p><p>&#xa0;</p>"
+      },
+      "jobDescription": {
+        "title": "Job Description",
+        "text": "<p><strong>What you get to do in this role:</strong></p><ul><li>Directly manage, mentor and develop 3–5 designers&#xa0;</li><li>Drive the UX vision and execution of a platform that produces a product line to revolutionize workplace productivity and analytics solutions for some of the largest companies in the world&#xa0;</li><li>Collaborate cross-functionally with product management, user research, engineering and content from strategic definition, planning, architecture, through tactical execution of the product roadmaps&#xa0;</li><li>Distill complex problems into clear goals and requirements for the design and research team&#xa0;</li><li>Understand the company's Design Systems, encourage their application, and contribute to their further development and maintenance.&#xa0;</li><li>Drive the growth of user-centric, collaborative culture across the Business Unit &#xa0;</li><li>Evangelize design strategy and product vision across the global, distributed design teams&#xa0;</li><li>Assist in conducting user needs assessment, task analysis and develop user profiles; identify key tasks for user research, competitive analysis and user testing, develop usability plans.&#xa0;</li><li>Develop high level task flow content and then use storyboards and other design documents to communicate concepts and vision to others.&#xa0;</li><li>Lead your team through rapid iterations of theoretical task scenarios, navigation map, flow, and state-transition diagrams to document design decisions.&#xa0;</li><li>Oversee your team's work: detailed mockups and prototypes and behavior specifications.&#xa0;</li><li>Oversee UI layouts including controls, labels and graphical elements for software on both mobile and desktop platforms with an eye towards experience unification.&#xa0;</li><li>Participate in documentation development process such as user experience specifications, testing and evaluation.&#xa0;</li><li>Work closely with product management in UX ideation and innovation.&#xa0;</li><li>Travel up to 20% of the year &#xa0;</li></ul>"
+      },
+      "qualifications": {
+        "title": "Qualifications",
+        "text": "<p><strong>To be successful in this role you have:</strong></p><ul><li>Experience in leveraging or critically thinking about how to integrate AI into work processes, decision-making, or problem-solving. This may include using AI-powered tools, automating workflows, analyzing AI-driven insights, or exploring AI's potential impact on the function or industry.</li><li>Minimum 3 years of experience managing people and/or leading design teams&#xa0;</li><li>Minimum 10+ years of experience in UX Design and/or Interaction Design field&#xa0;&#xa0;</li><li>Passion to grow and mentor people&#xa0;</li><li>Strong skills in Information Architecture&#xa0;</li><li>A portfolio of work samples representing your work and approach&#xa0;</li><li>Expertise in one or more of the following enterprise product spaces: IT Security Management, IT Operations Management, Security Operations, HR Service Delivery, Customer Service Management (CSM), or Finance &amp; Legal&#xa0;</li><li>Expert with Sketch, Invision, Photoshop, or other design tools&#xa0;</li><li>Ability to do rapid prototyping in Axure, Keynote, Framer, Principle or similar tools&#xa0;</li><li>Ability to understand and distill complex problems into clean solutions&#xa0;</li><li>Must have strong written and verbal English communication skills&#xa0;</li><li>Must have excellent teamwork, communication, and technical problem-solving skills to contribute within a multi-functional and multi-disciplined team&#xa0;</li><li>Obsessed with the relentless pursuit of UX perfection working inside an iterative and agile development environment&#xa0;</li><li>Must be able to work with minimal supervision in a fluid, fast-paced and truly agile environment&#xa0;</li><li>Expected to demonstrate a high level of initiative, good sense of humor, and a “make it work” ethos&#xa0;</li><li>Experience in creating content and/or designing with compliance to WCAG 2.0/2.1 AA guidelines is a plus&#xa0;</li></ul><p><strong>Preferred Qualifications:&#xa0;</strong></p><ul><li>Knowledge of web design technologies (HTML, CSS)&#xa0;</li><li>Experience working in an agile or incremental manner&#xa0;</li><li>Experience working with tools such as ServiceNow, Miro, or Abstract</li></ul>"
+      },
+      "additionalInformation": {
+        "title": "Additional Information",
+        "text": "<p><strong>Work Personas</strong></p><p>We approach our distributed world of work with flexibility and trust. Work personas (flexible, remote, or required in office) are categories that are assigned to ServiceNow employees depending on the nature of their work and their assigned work location. <a href=\"https://careers.servicenow.com/life-at-servicenow#workpersonas\" rel=\"noopener noreferrer\"><u>Learn more here</u></a>. To determine eligibility for a work persona, ServiceNow may confirm the distance between your primary residence and the closest ServiceNow office using a third-party service.</p><p><strong>Equal Opportunity Employer</strong></p><p>ServiceNow is an equal opportunity employer. All qualified applicants will receive consideration for employment without regard to race, color, religion, sex, sexual orientation, national origin, age, disability, gender identity,&#xa0; veteran status, or any other category protected by law. In addition, all qualified applicants with arrest or conviction records will be considered for employment in accordance with legal requirements. &#xa0;</p><p><strong>Accommodations</strong></p><p>We strive to create an accessible and inclusive experience for all candidates. If you require a reasonable accommodation to complete any part of the application process, or are unable to use this online application and need an alternative method to apply, please contact <a href=\"mailto:globaltalentss@servicenow.com\" rel=\"noopener noreferrer\">globaltalentss@servicenow.com </a>for assistance.&#xa0;</p><p><strong>Export Control Regulations</strong></p><p>For positions requiring access to controlled technology subject to export control regulations, including the U.S. Export Administration Regulations (EAR), ServiceNow may be required to obtain export control approval from government authorities for certain individuals. All employment is contingent upon ServiceNow obtaining any export license or other approval that may be required by relevant export control authorities.&#xa0;</p><p>From Fortune. ©2026 Fortune Media IP Limited. All rights reserved. Used under license.</p>"
+      }
+    }
+  },
+  "active": true,
+  "visibility": "PUBLIC",
+  "industry": {
+    "id": "it_and_services",
+    "label": "Information Technology And Services"
+  },
+  "function": {
+    "id": "engineering",
+    "label": "Engineering"
+  },
+  "department": {
+    "id": 2907670,
+    "label": "User Experience Design"
+  },
+  "experienceLevel": {
+    "id": "not_applicable",
+    "label": "Not Applicable"
+  },
+  "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+  },
+  "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+  }
+}

@@ -162,10 +162,9 @@ def sources_doctor(json_out: bool = typer.Option(False, "--json")) -> None:
 
     for row in rows:
         marker = {
-            "ok": "✓", "not_ingestable_probe_ok": "✓",
-            "zero_jobs": "⚠", "disabled": "-",
+            "ok": "✓", "zero_jobs": "⚠", "disabled": "-",
         }.get(row["status"], "✗")
-        detail = f"{row['job_count']} jobs" if row["status"] in ("ok", "zero_jobs", "not_ingestable_probe_ok") else (row["error"] or row["status"])
+        detail = f"{row['job_count']} jobs" if row["status"] in ("ok", "zero_jobs") else (row["error"] or row["status"])
         typer.echo(f"{marker} {row['name']:<30} {(row['provider'] or '-'):<12} {row['status']:<24} {detail}")
 
     typer.echo(f"\nsummary: {summary}")

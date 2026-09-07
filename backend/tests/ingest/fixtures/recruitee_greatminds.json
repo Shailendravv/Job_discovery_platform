@@ -1,0 +1,589 @@
+{
+  "offers": [
+    {
+      "location": "Remote job",
+      "position": 2004,
+      "location_question_visible": false,
+      "state_name": "District of Columbia",
+      "country_code": "US",
+      "employment_type_code": "fulltime_permanent",
+      "mailbox_email": "job.s7k3p@greatminds.recruitee.com",
+      "department": "Marketing",
+      "careers_url": "https://greatminds.recruitee.com/o/senior-website-manager",
+      "locations_question_required": true,
+      "updated_at": "2026-09-03 16:31:28 UTC",
+      "education_code": "bachelor_degree",
+      "sharing_image": null,
+      "options_salutation": "off",
+      "locations_question": "What is your preferred work location?",
+      "min_hours_per_week": "30.0",
+      "published_at": "2026-09-03 16:31:28 UTC",
+      "options_photo": "optional",
+      "hybrid": false,
+      "state_code": "DC",
+      "created_at": "2026-09-03 16:05:04 UTC",
+      "sharing_title": "Senior Website Manager",
+      "experience_code": "mid_level",
+      "description": "<p><strong>Who We Are</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Great Minds is a high-growth, mission-driven organization founded by educators in 2007. As a for-profit, Public Benefit Corporation, we believe all students deserve access to meaningful, challenging content—and all teachers deserve tools that are intuitive, effective, and built for the realities of today’s classrooms.</p><p class=\"MsoBodyTextCxSpMiddle\">We develop high-quality, knowledge-rich math, science and ELA curricula grounded in research and designed in collaboration with educators. Our materials reflect real classroom needs and are built to drive lasting student outcomes.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\">We are committed to usability, coherence, and practical implementation—supporting teachers not just through curriculum, but with professional learning, purposeful technology, and responsive service that enable strong adoption and impact.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\"><strong>What We Build</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Our products—<strong>Eureka Math and </strong>Eureka Math², <strong>Wit &amp; Wisdom</strong>, <strong>Geodes</strong>, and the newly launched <strong>Arts &amp; Letters ELA</strong>—are trusted by thousands of schools and districts nationwide.</p><ul><li><p><strong>Eureka Math</strong> is the most widely used math curriculum in the U.S., and is focused on balancing conceptual understanding, procedural fluency, and application.</p></li><li><p><strong>Wit &amp; Wisdom®</strong> and <strong>Arts &amp; Letters ELA™</strong> anchor our reading strategy with content-rich, grade-level instruction that integrates literature, history, and the arts, grounded in the science of reading. <strong>Geodes®</strong> complements our reading suite with decodable texts that pair phonics with meaningful content to support early literacy.</p><p style=\"min-height: 1.7em;\"></p></li></ul><p class=\"MsoBodyTextCxSpMiddle\">These programs reflect a shared belief in high expectations, joyful rigor, and deep respect for educators and students.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\"><strong>Where We’re Headed</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Great Minds is entering a new stage of growth and product maturity. We are focused on building more connected, customer-informed experiences across the full educator journey—from curriculum to professional learning to platform and support.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpLast\">Our long-term vision is to become a true partner in impact—not just delivering curriculum, but supporting educators in achieving outcomes at scale.</p><p><strong><br>Job Purpose</strong></p><p class=\"font-claude-response-body\">The Senior Website Manager is responsible for the day-to-day operations of Great Minds' marketing website. Reporting to the Director, Web Strategy and Digital Marketing, this role owns the publishing workflow, CMS page production, quality assurance, and site health monitoring. The Website Manager brings attention to creative detail when assembling pages, producing layouts that are visually polished and aligned with the established design direction.</p><p class=\"font-claude-response-body\">Beyond operations, the Senior Website Manager leads the execution of page optimization and experimentation — implementing A/B and multivariate tests, personalization, monitoring performance, and reporting results in partnership with marketing stakeholders. The right candidate is highly organized, analytically minded, detail-oriented with a creative eye, and comfortable working inside a modern CMS environment.</p><p><strong><br>Responsibilities</strong></p><ul><li><p class=\"MsoNormal\">CMS Operations &amp; Page Production</p><ul><li><p class=\"MsoNormal\">Build and publish web pages using the CMS component library — assembling layouts, populating content fields, and configuring page structures without requiring custom development</p></li><li><p class=\"MsoListParagraph\">Manage the publishing workflow — intake, scheduling, review routing, and go-live coordination across contributors</p></li><li><p class=\"MsoListParagraph\">Maintain CMS hygiene: user permissions, template integrity, component usage standards, and content organization</p></li><li><p class=\"MsoListParagraph\">Partner with the UX designer and developer on component requests, template updates, and CMS configuration changes</p></li></ul></li><li><p class=\"MsoNormal\">Page Optimization &amp; Experimentation</p><ul><li><p class=\"MsoNormal\">Lead the execution of A/B and multivariate tests — setting up experiments in the platform, implementing variants, and monitoring results</p></li><li><p class=\"MsoListParagraph\">Partner with the key stakeholders to translate optimization hypotheses and content strategies into live experiments</p></li><li><p class=\"MsoListParagraph\">Report test results clearly, with recommendations for next steps, to our marketing partners</p></li><li><p class=\"MsoListParagraph\">Maintain an optimization backlog, tracking what has been tested, what is in progress, and what is queued</p></li><li><p class=\"MsoListParagraph\">Monitor CTA performance, page engagement metrics, and conversion paths — surfacing patterns and flagging opportunities for improvement</p></li></ul></li><li><p class=\"MsoNormal\">Quality Assurance</p><ul><li><p class=\"MsoNormal\">Execute QA checks before every publish: cross-browser and mobile rendering, link integrity, form functionality, accessibility compliance, and metadata accuracy</p></li><li><p class=\"MsoListParagraph\">Own the staging environment review process as part of the four-stage release workflow (Local → Review → Stage → Production)</p></li><li><p class=\"MsoListParagraph\">Identify and triage site issues, coordinating resolution with the developer as appropriate</p></li></ul></li><li><p class=\"MsoNormal\">Site Health &amp; Performance Monitoring</p><ul><li><p class=\"MsoNormal\">Monitor Core Web Vitals, uptime, redirect integrity, and crawl health on an ongoing basis</p></li><li><p class=\"MsoListParagraph\">Flag technical performance regressions and work with the developer to resolve them</p></li><li><p class=\"MsoListParagraph\">Maintain redirect maps and ensure URL hygiene across site updates and content migrations</p></li></ul></li><li><p class=\"MsoNormal\">Governance &amp; Process</p><ul><li><p class=\"MsoNormal\">Enforce the website governance framework in day-to-day operations — intake process, approval routing, and release cadence</p></li><li><p class=\"MsoListParagraph\">Maintain documentation for publishing standards, CMS workflows, and page production guidelines</p></li><li><p>Support onboarding of new content contributors to CMS tools and publishing standards</p></li></ul></li></ul>",
+      "company_name": "Great Minds",
+      "highlight": null,
+      "cover_image": null,
+      "options_cv": "required",
+      "locations_question_type": "multiple_choice",
+      "tags": [],
+      "salary": {
+        "max": null,
+        "min": null,
+        "period": null,
+        "currency": null
+      },
+      "on_site": false,
+      "remote": true,
+      "max_hours": 40,
+      "sharing_description": "Who We AreGreat Minds is a high-growth, mission-driven organization founded by educators in 2007. As a for-profit, Public Benefit Corporation, we believe all students deserve access to meaningful, cha",
+      "max_hours_per_week": "40.0",
+      "id": 2733728,
+      "category_code": "other",
+      "careers_apply_url": "https://greatminds.recruitee.com/o/senior-website-manager/c/new",
+      "slug": "senior-website-manager",
+      "locations": [
+        {
+          "id": 38703,
+          "name": "Washington DC",
+          "state": "District of Columbia",
+          "country": "United States",
+          "city": "DC",
+          "translations": {
+            "en": {
+              "name": "Washington DC",
+              "city": "DC",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "DC",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        }
+      ],
+      "requirements": "<p><strong>Requirements</strong></p><ul><li><p class=\"MsoListParagraph\">5+ years of experience in a web operations, digital production, or CMS management role</p></li><li><p class=\"MsoListParagraph\">Hands-on experience with a modern headless or component-based CMS (Storyblok, Contentful, Webflow, or similar)</p></li><li><p class=\"MsoListParagraph\">Experience setting up and managing A/B or multivariate tests using tools such as Google Optimize, VWO, Optimizely, or similar</p></li><li><p class=\"MsoListParagraph\">Comfort reading and interpreting performance data in GA4 or equivalent analytics platforms</p></li><li><p class=\"MsoListParagraph\">Strong QA instincts — you catch what others miss before it goes live</p></li><li><p class=\"MsoListParagraph\">Familiarity with Core Web Vitals, basic SEO hygiene, and accessibility standards (WCAG 2.1)</p></li><li><p class=\"MsoListParagraph\">Clear communicator who can coordinate across marketing contributors, developers, and stakeholders</p></li><li><p class=\"MsoListParagraph\">Experience in a B2B or education organization is a plus</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Required Education</strong></p><ul><li><p class=\"MsoListParagraph\">Bachelor's degree in marketing, communications, digital media, or a related field, or equivalent professional experience.</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Status</strong></p><p>Full-time<strong><br></strong></p><p><strong>Location</strong></p><ul><li><p class=\"MsoListParagraph\">Remote opportunity with &gt;5% travel<strong><br></strong></p></li></ul><p>The expected base salary range for this position is $91,000-$109,000, however the offered salary<strong> </strong>may be higher or lower than the above range dependent on numerous factors including, but not limited to location, work experience, skills and internal equity considerations. The base salary is not inclusive of benefits or other incentives.</p><p style=\"min-height: 1.7em;\"></p><p>A cover letter and resume are required to be considered for this position.</p><p style=\"min-height: 1.7em;\"></p><p>New employees will be required to successfully complete a background check.</p><p style=\"min-height: 1.7em;\"></p><p>Any communication to applicants relating to the Great Minds hiring process will only come from email addresses with the domains <strong><a rel=\"noopener\" target=\"_blank\" href=\"http://greatminds.org/\">greatminds.org</a></strong> or <strong><a rel=\"noopener\" target=\"_blank\" href=\"http://greatminds.recruitee.com/\">greatminds.recruitee.com</a></strong>. If in the course of the application or hiring process with Great Minds you are contacted through another domain, are requested to provide banking or other sensitive information, or you note any other suspicious activity, please contact <a rel=\"noopener\" target=\"_blank\" href=\"mailto:security@greatminds.org\">security@greatminds.org</a></p><p style=\"min-height: 1.7em;\"></p><p>Great Minds is an equal opportunity employer. We will extend equal opportunity to all individuals without regard to race, religion, color, sex (including pregnancy, sexual orientation, and gender identity), national origin, disability, age, genetic information, or any other status protected under applicable federal, state, or local laws. Our policy reflects and affirms the organization’s commitment to the principles of fair employment and the elimination of all discriminatory practices.</p><p><br></p><p>#LI-Remote</p>",
+      "options_phone": "required",
+      "options_cover_letter": "optional",
+      "city": "DC",
+      "close_at": null,
+      "guid": "s7k3p",
+      "title": "Senior Website Manager",
+      "dynamic_fields": [],
+      "status": "published",
+      "options_title": "off",
+      "country": "United States",
+      "min_hours": 30,
+      "postal_code": null
+    },
+    {
+      "location": "Remote job",
+      "position": 2003,
+      "location_question_visible": true,
+      "state_name": "Minnesota",
+      "country_code": "US",
+      "employment_type_code": "fulltime_permanent",
+      "mailbox_email": "job.klm4n@greatminds.recruitee.com",
+      "department": "Success",
+      "careers_url": "https://greatminds.recruitee.com/o/success-lead-south-texas",
+      "locations_question_required": true,
+      "updated_at": "2026-09-04 20:31:06 UTC",
+      "education_code": "bachelor_degree",
+      "sharing_image": null,
+      "options_salutation": "off",
+      "locations_question": "What is your preferred work location?",
+      "min_hours_per_week": "30.0",
+      "published_at": "2026-09-02 18:36:14 UTC",
+      "options_photo": "optional",
+      "hybrid": false,
+      "state_code": "MN",
+      "created_at": "2026-09-02 18:32:36 UTC",
+      "sharing_title": "Success Lead - South Texas",
+      "experience_code": "mid_level",
+      "description": "<p><strong>Who We Are</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Great Minds is a high-growth, mission-driven organization founded by educators in 2007. As a for-profit, Public Benefit Corporation, we believe all students deserve access to meaningful, challenging content—and all teachers deserve tools that are intuitive, effective, and built for the realities of today’s classrooms.</p><p class=\"MsoBodyTextCxSpMiddle\">We develop high-quality, knowledge-rich math, science and ELA curricula grounded in research and designed in collaboration with educators. Our materials reflect real classroom needs and are built to drive lasting student outcomes.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\">We are committed to usability, coherence, and practical implementation—supporting teachers not just through curriculum, but with professional learning, purposeful technology, and responsive service that enable strong adoption and impact.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\"><strong>What We Build</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Our products—<strong>Eureka Math </strong>and<strong> Eureka Math²</strong>, <strong>Wit &amp; Wisdom</strong>, <strong>Geodes</strong>, and the newly launched <strong>Arts &amp; Letters ELA</strong>—are trusted by thousands of schools and districts nationwide.</p><ul><li><p><strong>Eureka Math</strong> is the most widely used math curriculum in the U.S., and is focused on balancing conceptual understanding, procedural fluency, and application.</p></li><li><p><strong>Wit &amp; Wisdom®</strong> and <strong>Arts &amp; Letters ELA™</strong> anchor our reading strategy with content-rich, grade-level instruction that integrates literature, history, and the arts, grounded in the science of reading. <strong>Geodes®</strong> complements our reading suite with decodable texts that pair phonics with meaningful content to support early literacy.</p></li></ul><p class=\"MsoBodyTextCxSpMiddle\">These programs reflect a shared belief in high expectations, joyful rigor, and deep respect for educators and students.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\"><strong>Where We’re Headed</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Great Minds is entering a new stage of growth and product maturity. We are focused on building more connected, customer-informed experiences across the full educator journey—from curriculum to professional learning to platform and support.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpLast\">Our long-term vision is to become a true partner in impact—not just delivering curriculum, but supporting educators in achieving outcomes at scale.</p><p><strong><br>Job Purpose</strong></p><p>The Success Lead is a member of the Implementation Services team and supports Great Minds in its mission to promote adoption and effective implementation of all curriculum products. Maintaining intimate knowledge of the features and advantages of Great Minds products and services, Success Leads work as part of a regionally based team to support districts and schools to successfully implement Great Minds curriculum. The Success Lead<br>- fosters long-term relationships with district leaders and school leaders,<br>- develops comprehensive implementation plans with partners and monitors progress, and<br>- delivers onsite, job embedded leadership consulting that results in student growth.&nbsp;</p><p>This role is an exceptional opportunity for skilled instructional coaches, school leaders, district leaders, and education leaders who have done such work in other organizations. Applicants are experienced in leading teams that have implemented Great Minds curricula. While the work is remote, this will also be a highly collaborative position, necessitating a strong sense of teamwork and cooperation in addition to some travel.<strong><br></strong></p><p><strong><br>Responsibilities</strong></p><ul><li><p>Manage a portfolio of strategic district partnerships and serve as the implementation relationship owner for Great Minds customers in a territory</p></li><li><p>Partner with district and school leaders to plan and execute effective Great Minds implementations. Offer strategies, resources, and professional learning opportunities that support successful implementation, change management, and improved student outcomes</p></li><li><p>Support district partners in ways that achieve aggressive KPIs designed to rapidly improving student learning outcomes and scale services to support more districts</p></li><li><p>Provide on-site targeted support to district leaders, school leaders, and coaches. This includes a wide range of support, including school visits and regularly scheduled meetings with partners to monitor and evaluate progress, review data, identify implementation successes and challenges, provide assessment and grading supports, and encourage ongoing PLC and professional learning plans</p></li><li><p>Facilitate leadership professional learning networks, PD, and coaching sessions</p></li><li><p>Gather, monitor, and record implementation success metrics at regular intervals, make recommendations to improve instruction and student learning outcomes, and document all significant customer interactions and data</p></li><li><p>Document and communicate insights about implementation to leadership based on interactions with assigned implementations</p></li><li><p>Stay abreast of, and share with the organization, the regional trends and factors that influence customer practices, sensitivities, and impacts on educational reforms</p></li><li><p>Collaborate with Great Minds sales professionals in one or more territories to expand adoptions, plan implementation services, and serve as the primary Great Minds content expert</p></li><li><p>Plan and execute pre-launch structures and communications by providing content assistance for the sales team, contributing deep content knowledge and responding to customer questions</p></li><li><p>Serve as a liaison cross all colleagues (Success, Sales team, etc.) interacting with customers in the region</p></li><li><p>Represent Great Minds through presentations at conferences, and contribute to content in the form of blogs, whitepapers, etc.</p></li><li><p>Cultivate and maintain a strong and supportive Great Minds culture in all work environments, with an emphasis on trust, collegiality, curiosity, and quality</p></li><li><p>Perform other duties as assigned</p></li></ul>",
+      "company_name": "Great Minds",
+      "highlight": null,
+      "cover_image": null,
+      "options_cv": "required",
+      "locations_question_type": "multiple_choice",
+      "tags": [],
+      "salary": {
+        "max": null,
+        "min": null,
+        "period": null,
+        "currency": null
+      },
+      "on_site": false,
+      "remote": true,
+      "max_hours": 40,
+      "sharing_description": "Who We AreGreat Minds is a high-growth, mission-driven organization founded by educators in 2007. As a for-profit, Public Benefit Corporation, we believe all students deserve access to meaningful, cha",
+      "max_hours_per_week": "40.0",
+      "id": 2731728,
+      "category_code": "other",
+      "careers_apply_url": "https://greatminds.recruitee.com/o/success-lead-south-texas/c/new",
+      "slug": "success-lead-south-texas",
+      "locations": [
+        {
+          "id": 259817,
+          "name": "Minnesota",
+          "state": "Minnesota",
+          "country": "United States",
+          "city": "Minnesota",
+          "translations": {
+            "en": {
+              "name": "Minnesota",
+              "city": "Minnesota",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "MN",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 243247,
+          "name": "Indiana",
+          "state": "Indiana",
+          "country": "United States",
+          "city": "Indiana",
+          "translations": {
+            "en": {
+              "name": "Indiana",
+              "city": "Indiana",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IN",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 249410,
+          "name": "Wisconsin",
+          "state": "Wisconsin",
+          "country": "United States",
+          "city": "Wisconsin",
+          "translations": {
+            "en": {
+              "name": "Wisconsin",
+              "city": "Wisconsin",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "WI",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 242699,
+          "name": "Iowa",
+          "state": "Iowa",
+          "country": "United States",
+          "city": "Des Moines",
+          "translations": {
+            "en": {
+              "name": "Iowa",
+              "city": "Des Moines",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IA",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        }
+      ],
+      "requirements": "<p><strong>Requirements</strong></p><ul><li><p>At least 7 years of experience in education with at least 3 years as a school leader or an instructional coach</p></li><li><p>Experience managing a portfolio of strategic district partnerships</p></li><li><p>Experience implementing one of Great Minds curricula and/or an aligned high-quality, knowledge-building curriculum</p></li><li><p>Proficiency with or alignment to Great Minds instructional design and pedagogy</p></li><li><p>Demonstrated proficiency in educational consulting or coaching, site-based leadership, curriculum decision making, and professional learning facilitation</p></li><li><p>Experience with both digital and print education platforms</p></li><li><p>Knowledge of the factors that drive decision making at all levels of public, charter, and private schools</p></li><li><p>Clear and succinct writing skills, with the ability to produce implementation plans aligned to the organizational and product vision while honoring districts’ unique contexts</p></li><li><p>Strong organizational habits necessary for successful goal setting, project management, collective decision making, deadline execution, and record keeping</p></li><li><p>Ability to make solutions-oriented decisions through flexible thinking in an ambiguous, fast-paced entrepreneurial environment</p><p style=\"min-height: 1.7em;\"></p></li></ul><p><strong>Attributes</strong></p><ul><li><p>Passion for and commitment to the importance of high-quality, knowledge-rich curriculum</p></li><li><p>Commitment to high standards, instructional quality, and continuous improvement for oneself and others</p></li><li><p>Receptivity to feedback with a focus on reflective practice</p></li><li><p>Highly collaborative with the ability to consistently exhibit diplomacy, tact, and integrity</p></li><li><p>Appreciation for the challenges and victories faced everyday by educators and their leaders working toward improving student learning outcomes</p></li><li><p>Empathy, curiosity, and the desire to continually grow as a learner</p></li><li><p>Deep belief that every child is capable of greatness</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Required Education</strong></p><p>Bachelor's degree</p><p><strong>Status</strong></p><p>Full-time<br></p><p><strong>Travel</strong><br>The Success Lead may travel up to 50% of the time, depending on location. Tasks while traveling may include the following:</p><ul><li><p>Minimum 50% travel (Texas)</p></li><li><p>Visit customers sites to support school- and district-level implementation plans</p></li><li><p>Provide onsite coaching or customer implementation support</p></li><li><p>Provide sales presentation support</p></li><li><p>Participate in team meetings</p></li><li><p>A valid driver’s license and willingness to fly and drive are required to fulfill PD and client service assignments.</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Location</strong></p><p>Remote</p><p>Candidate must live in Texas (preferably the Rio Grande Valley).</p><p style=\"min-height: 1.7em;\"></p><p>The base salary range for this position is $95,000-$100,000, however the offered salary<strong> </strong>may be higher or lower than the above range dependent on numerous factors including, but not limited to location, work experience, skills and internal equity considerations.. The base salary is not inclusive of benefits or other incentives.</p><p style=\"min-height: 1.7em;\"></p><p>A cover letter and resume are required to be considered for this position.<br></p><p>New employees will be required to successfully complete a background check and provide declaration of COVID-19 vaccination status. We do not require COVID-19 vaccination as a condition of employment; however, your vaccination status could impact your ability to perform this role at certain client sites.<br></p><p>Any communication to applicants relating to the Great Minds hiring process will only come from email addresses with the domains <a rel=\"noopener\" target=\"_blank\" href=\"http://greatminds.org\">greatminds.org</a> or <a rel=\"noopener\" target=\"_blank\" href=\"http://greatminds.recruitee.com\">greatminds.recruitee.com</a>. If in the course of the application or hiring process with Great Minds you are contacted through another domain, are requested to provide banking or other sensitive information, or you note any other suspicious activity, please contact <a rel=\"noopener\" target=\"_blank\" href=\"mailto:security@greatminds.org\">security@greatminds.org</a><br></p><p>Great Minds is an equal opportunity employer. We will extend equal opportunity to all individuals without regard to race, religion, color, sex (including pregnancy, sexual orientation, and gender identity), national origin, disability, age, genetic information, or any other status protected under applicable federal, state, or local laws. Our policy reflects and affirms the organization’s commitment to the principles of fair employment and the elimination of all discriminatory practices.</p><p style=\"min-height: 1.7em;\"></p><p>#LI-Remote</p>",
+      "options_phone": "required",
+      "options_cover_letter": "optional",
+      "city": "Minnesota",
+      "close_at": null,
+      "guid": "klm4n",
+      "title": "Success Lead - South Texas",
+      "dynamic_fields": [],
+      "status": "published",
+      "options_title": "off",
+      "country": "United States",
+      "min_hours": 30,
+      "postal_code": null
+    },
+    {
+      "location": "Remote job",
+      "position": 2002,
+      "location_question_visible": true,
+      "state_name": "Illinois",
+      "country_code": "US",
+      "employment_type_code": "fulltime_permanent",
+      "mailbox_email": "job.o64hh@greatminds.recruitee.com",
+      "department": "Success",
+      "careers_url": "https://greatminds.recruitee.com/o/success-coach-midwest",
+      "locations_question_required": true,
+      "updated_at": "2026-09-02 19:18:48 UTC",
+      "education_code": "bachelor_degree",
+      "sharing_image": null,
+      "options_salutation": "off",
+      "locations_question": "What is your preferred work location?",
+      "min_hours_per_week": "30.0",
+      "published_at": "2026-09-02 18:25:20 UTC",
+      "options_photo": "optional",
+      "hybrid": false,
+      "state_code": "IL",
+      "created_at": "2026-09-02 18:22:47 UTC",
+      "sharing_title": "Success Coach - Midwest",
+      "experience_code": "mid_level",
+      "description": "<p><strong>Who We Are</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Great Minds is a high-growth, mission-driven organization founded by educators in 2007. As a for-profit, Public Benefit Corporation, we believe all students deserve access to meaningful, challenging content—and all teachers deserve tools that are intuitive, effective, and built for the realities of today’s classrooms.</p><p class=\"MsoBodyTextCxSpMiddle\">We develop high-quality, knowledge-rich math, science and ELA curricula grounded in research and designed in collaboration with educators. Our materials reflect real classroom needs and are built to drive lasting student outcomes.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\">We are committed to usability, coherence, and practical implementation—supporting teachers not just through curriculum, but with professional learning, purposeful technology, and responsive service that enable strong adoption and impact.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\"><strong>What We Build</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Our products—<strong>Eureka Math </strong>and<strong> Eureka Math²</strong>, <strong>Wit &amp; Wisdom</strong>,<strong>Geodes</strong>, and the newly launched <strong>Arts &amp; Letters ELA</strong>—are trusted by thousands of schools and districts nationwide.</p><ul><li><p><strong>Eureka Math</strong> is the most widely used math curriculum in the U.S., and is focused on balancing conceptual understanding, procedural fluency, and application.</p></li><li><p><strong>Wit &amp; Wisdom®</strong> and <strong>Arts &amp; Letters ELA™</strong> anchor our reading strategy with content-rich, grade-level instruction that integrates literature, history, and the arts, grounded in the science of reading. <strong>Geodes®</strong> complements our reading suite with decodable texts that pair phonics with meaningful content to support early literacy.</p><p>These programs reflect a shared belief in high expectations, joyful rigor, and deep respect for educators and students.</p></li></ul><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpMiddle\"><strong>Where We’re Headed</strong></p><p class=\"MsoBodyTextCxSpMiddle\">Great Minds is entering a new stage of growth and product maturity. We are focused on building more connected, customer-informed experiences across the full educator journey—from curriculum to professional learning to platform and support.</p><p class=\"MsoBodyTextCxSpMiddle\">&nbsp;</p><p class=\"MsoBodyTextCxSpLast\">Our long-term vision is to become a true partner in impact—not just delivering curriculum, but supporting educators in achieving outcomes at scale.</p><p><strong><br>Job Purpose</strong></p><p>The Success Coach is a member of the Implementation Services team and supports Great Minds in its mission to promote adoption and effective implementation of all curriculum products. Maintaining intimate knowledge of the features and advantages of Great Minds products and services, Success Coaches work as part of a Midwest&nbsp;based team to support districts and schools to successfully implement Great Minds curriculum. The Success Coach is a versatile team member with the skills to deliver a blend of services that include both PD facilitation and coaching. The volume of PD versus coaching will vary based on the needs of districts in the assigned region.</p><p>This role is an exceptional opportunity for skilled teachers or instructional coaches who are experienced in implementing a high-quality curriculum in<strong>&nbsp;</strong>area schools<strong> </strong>to contribute to Great Minds’ organizational mission to ensure all students have access to a high-quality, knowledge-based education.</p><p><strong><br>Responsibilities</strong></p><ul><li><p>Develop and maintain expertise in the Great Minds professional services catalog, including <em>Eureka Math and Eureka Math2</em></p><ul><li><p>provide high-quality, on-site support, coaching, and PD to assigned schools</p></li><li><p>collaborate with Success Leads to deliver highly contextualized services</p></li><li><p>deliver professional services on-site up to 80% of the time in&nbsp;school systems</p></li></ul></li></ul><ul><li><p>Engage in cycles of internal training to develop or deepen expertise in new professional services offerings, in general facilitation and coaching skills, and to gain greater familiarity with Great Minds products</p></li><li><p>Gather, monitor, and record implementation success metrics at regular intervals; document these metrics and all significant customer interactions</p></li><li><p>Document and communicate insights about implementation to leadership based on interactions with assigned implementations</p></li><li><p>Stay abreast of, and share with the organization, the regional trends and factors that influence customer practices, sensitivities, and purchasing practices</p></li><li><p>Represent Great Minds through presentations at conferences, and contribute to content in the form of blogs, whitepapers, etc.</p></li><li><p>Cultivate and maintain a strong and supportive Great Minds culture in all work environments, with an emphasis on trust, collegiality, curiosity, and quality</p></li></ul><p style=\"min-height: 1.7em;\"></p>",
+      "company_name": "Great Minds",
+      "highlight": null,
+      "cover_image": null,
+      "options_cv": "required",
+      "locations_question_type": "multiple_choice",
+      "tags": [],
+      "salary": {
+        "max": null,
+        "min": null,
+        "period": null,
+        "currency": null
+      },
+      "on_site": false,
+      "remote": true,
+      "max_hours": 40,
+      "sharing_description": "Who We AreGreat Minds is a high-growth, mission-driven organization founded by educators in 2007. As a for-profit, Public Benefit Corporation, we believe all students deserve access to meaningful, cha",
+      "max_hours_per_week": "40.0",
+      "id": 2731725,
+      "category_code": "other",
+      "careers_apply_url": "https://greatminds.recruitee.com/o/success-coach-midwest/c/new",
+      "slug": "success-coach-midwest",
+      "locations": [
+        {
+          "id": 38690,
+          "name": "Chicago",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "Chicago",
+              "city": "Chicago",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 38518,
+          "name": "Chicago, 60007",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "Chicago, 60007",
+              "city": "Chicago",
+              "postal_code": "60007",
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": "60007",
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 38503,
+          "name": "Chicago, 60106",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "Chicago, 60106",
+              "city": "Chicago",
+              "postal_code": "60106",
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": "60106",
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 38665,
+          "name": "Chicago, 60611",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "Chicago, 60611",
+              "city": "Chicago",
+              "postal_code": "60611",
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": "60611",
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 279238,
+          "name": "Midwest",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "Midwest",
+              "city": "Chicago",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 38697,
+          "name": "Chicago, 60640",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "Chicago, 60640",
+              "city": "Chicago",
+              "postal_code": "60640",
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": "60640",
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 242696,
+          "name": "North Chicago",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "North Chicago",
+              "city": "Chicago",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 242697,
+          "name": "South Chicago",
+          "state": "Illinois",
+          "country": "United States",
+          "city": "Chicago",
+          "translations": {
+            "en": {
+              "name": "South Chicago",
+              "city": "Chicago",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IL",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 242699,
+          "name": "Iowa",
+          "state": "Iowa",
+          "country": "United States",
+          "city": "Des Moines",
+          "translations": {
+            "en": {
+              "name": "Iowa",
+              "city": "Des Moines",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IA",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 243247,
+          "name": "Indiana",
+          "state": "Indiana",
+          "country": "United States",
+          "city": "Indiana",
+          "translations": {
+            "en": {
+              "name": "Indiana",
+              "city": "Indiana",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IN",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 38693,
+          "name": "indianapolis",
+          "state": "Indiana",
+          "country": "United States",
+          "city": "indianapolis",
+          "translations": {
+            "en": {
+              "name": "indianapolis",
+              "city": "indianapolis",
+              "postal_code": "46202",
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "IN",
+          "postal_code": "46202",
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 250066,
+          "name": "Milwaukee",
+          "state": "Wisconsin",
+          "country": "United States",
+          "city": "Milwaukee",
+          "translations": {
+            "en": {
+              "name": "Milwaukee",
+              "city": "Milwaukee",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "WI",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 249410,
+          "name": "Wisconsin",
+          "state": "Wisconsin",
+          "country": "United States",
+          "city": "Wisconsin",
+          "translations": {
+            "en": {
+              "name": "Wisconsin",
+              "city": "Wisconsin",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "WI",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        },
+        {
+          "id": 259817,
+          "name": "Minnesota",
+          "state": "Minnesota",
+          "country": "United States",
+          "city": "Minnesota",
+          "translations": {
+            "en": {
+              "name": "Minnesota",
+              "city": "Minnesota",
+              "postal_code": null,
+              "street": null,
+              "note": null
+            }
+          },
+          "country_code": "US",
+          "state_code": "MN",
+          "postal_code": null,
+          "street": null,
+          "note": null
+        }
+      ],
+      "requirements": "<p><strong>Requirements</strong></p><ul><li><p>At least 3 years of experience teaching or coaching with at least 1 year of experience delivering high-quality professional development.</p></li><li><p>Experience implementing one of Great Minds curricula, especially <em>Wit &amp; Wisdom</em> and/or <em>Eureka Math2</em></p></li><li><p>Proficiency with or alignment to Great Minds instructional design and pedagogy</p></li><li><p>Deep content knowledge in the curriculum focus area (humanities, mathematics, science)</p></li><li><p>Experience as campus instructional leader or coach</p></li><li><p>Ability to coach in multiple content areas of K-Algebra 2 Mathematics and RLA</p></li><li><p>Experience with both digital and print education platforms</p></li><li><p>Strong organizational habits necessary for successful goal setting, project management, collective decision making, deadline execution, and record keeping</p></li><li><p>Ability to make solutions-oriented decisions through flexible thinking in an ambiguous, fast-paced entrepreneurial environment</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Attributes</strong></p><ul><li><p>Passion for and commitment to the importance of high-quality, knowledge-rich curriculum</p></li><li><p>Commitment to high standards, instructional quality, and continuous improvement for oneself and others</p></li><li><p>Receptivity to feedback with a focus on reflective practice</p></li><li><p>Highly collaborative with the ability to consistently exhibit diplomacy, tact, and integrity</p></li><li><p>Appreciation for the challenges and victories faced everyday by educators and their leaders working toward improving student learning outcomes</p></li><li><p>Empathy, curiosity, and the desire to continually grow as a learner</p></li><li><p>Deep belief that every child is capable of greatness</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Required Education</strong></p><ul><li><p>Bachelor's degree</p><p style=\"min-height: 1.7em;\"></p></li></ul><p><strong>Status</strong></p><ul><li><p>Remote</p><p style=\"min-height: 1.7em;\"></p></li></ul><p><strong>Location</strong></p><ul><li><p>Minnesota, Indiana, Illinois, Wisconsin, Iowa</p></li></ul><p style=\"min-height: 1.7em;\"></p><p><strong>Travel</strong></p><p>The Success Coach may work on-site up to 80% of the time. Tasks may include the following:</p><ul><li><p>Provide onsite coaching, PD, or customer implementation support</p></li><li><p>Provide sales presentation support</p></li><li><p>Participate in team meetings</p></li></ul><p>Based on the regional needs across Great Minds, occasional travel beyond<strong>&nbsp;</strong>this region&nbsp;is possible.</p><p>A valid driver’s license and willingness to fly and drive are required for this position.<br><br></p><p>The base salary range for this position is $74,000-$84,000, however the offered salary<strong> </strong>may be higher or lower than the above range dependent on numerous factors including, but not limited to location, work experience, skills and internal equity considerations.. The base salary is not inclusive of benefits or other incentives.</p><p style=\"min-height: 1.7em;\"></p><p>A cover letter and resume are required to be considered for this position.</p><p style=\"min-height: 1.7em;\"></p><p>New employees will be required to successfully complete a background check and provide declaration of COVID-19 vaccination status. We do not require COVID-19 vaccination as a condition of employment; however, your vaccination status could impact your ability to perform this role at certain client sites.<br></p><p>Any communication to applicants relating to the Great Minds hiring process will only come from email addresses with the domains <a rel=\"noopener\" target=\"_blank\" href=\"http://greatminds.org\">greatminds.org</a> or <a rel=\"noopener\" target=\"_blank\" href=\"http://greatminds.recruitee.com\">greatminds.recruitee.com</a>. If in the course of the application or hiring process with Great Minds you are contacted through another domain, are requested to provide banking or other sensitive information, or you note any other suspicious activity, please contact <a rel=\"noopener\" target=\"_blank\" href=\"mailto:security@greatminds.org\">security@greatminds.org</a><br></p><p>Great Minds is an equal opportunity employer. We will extend equal opportunity to all individuals without regard to race, religion, color, sex (including pregnancy, sexual orientation, and gender identity), national origin, disability, age, genetic information, or any other status protected under applicable federal, state, or local laws. Our policy reflects and affirms the organization’s commitment to the principles of fair employment and the elimination of all discriminatory practices.</p><p style=\"min-height: 1.7em;\"></p><p>#LI-Remote</p>",
+      "options_phone": "required",
+      "options_cover_letter": "optional",
+      "city": "Chicago",
+      "close_at": null,
+      "guid": "o64hh",
+      "title": "Success Coach - Midwest",
+      "dynamic_fields": [],
+      "status": "published",
+      "options_title": "off",
+      "country": "United States",
+      "min_hours": 30,
+      "postal_code": null
+    }
+  ]
+}

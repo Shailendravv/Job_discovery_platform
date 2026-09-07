@@ -1,8 +1,8 @@
 # ATS companies configuration.
 #
 # Each entry must have a ``name`` and ``careers_url``. Providers are auto-detected
-# from the URL pattern (greenhouse -> ashby -> lever -> workday). Set ``enabled: false``
-# to skip a company.
+# from the URL pattern (greenhouse -> ashby -> lever -> workable -> smartrecruiters
+# -> recruitee -> workday). Set ``enabled: false`` to skip a company.
 #
 # Greenhouse companies can optionally set an explicit ``api`` URL to bypass
 # auto-detection, though it's not required -- the provider derives it from the
@@ -419,3 +419,77 @@ ats_companies:
     careers_url: https://job-boards.greenhouse.io/yext
   - name: Toptal
     careers_url: https://jobs.lever.co/toptal
+
+  # ===========================
+  # WORKABLE (milestone 5, live-verified 2026-09-07 — 200 OK, jobs > 0)
+  # ===========================
+  - name: JobRack
+    careers_url: https://apply.workable.com/jobrack/
+  - name: Flosum
+    careers_url: https://apply.workable.com/flosum/
+  - name: JoVE
+    careers_url: https://apply.workable.com/jove/
+  - name: Usercentrics
+    careers_url: https://apply.workable.com/usercentrics/
+  - name: WorkMotion
+    careers_url: https://apply.workable.com/workmotion/
+  - name: Qode
+    careers_url: https://apply.workable.com/qodeworld/
+  - name: Infleqtion
+    careers_url: https://apply.workable.com/coldquanta/
+  - name: Zego
+    careers_url: https://apply.workable.com/zego/
+
+  # ===========================
+  # SMARTRECRUITERS (milestone 5, live-verified 2026-09-07 — 200 OK, jobs > 0)
+  # ===========================
+  - name: SmartRecruiters
+    careers_url: https://jobs.smartrecruiters.com/SmartRecruiters
+  - name: Avery Dennison
+    careers_url: https://jobs.smartrecruiters.com/AveryDennison
+  - name: Colliers
+    careers_url: https://jobs.smartrecruiters.com/Colliers
+  - name: ServiceNow
+    careers_url: https://jobs.smartrecruiters.com/ServiceNow
+  - name: Experian
+    careers_url: https://jobs.smartrecruiters.com/Experian
+  - name: OceanaGold
+    careers_url: https://jobs.smartrecruiters.com/OceanaGold
+  - name: KPMG Australia
+    careers_url: https://jobs.smartrecruiters.com/KPMGAustralia
+  - name: Equinox
+    careers_url: https://jobs.smartrecruiters.com/Equinox
+  - name: Tipico
+    careers_url: https://jobs.smartrecruiters.com/Tipico
+  - name: Gameloft
+    careers_url: https://jobs.smartrecruiters.com/Gameloft
+  - name: Expeditors
+    careers_url: https://jobs.smartrecruiters.com/Expeditors
+  - name: Frasers Group
+    careers_url: https://jobs.smartrecruiters.com/FrasersGroup
+  - name: Asbury Communities
+    careers_url: https://jobs.smartrecruiters.com/AsburyCommunities
+  - name: Deloitte Netherlands
+    careers_url: https://jobs.smartrecruiters.com/DeloitteNL
+  - name: JYSK
+    careers_url: https://jobs.smartrecruiters.com/JYSK
+  - name: Sodexo
+    careers_url: https://jobs.smartrecruiters.com/Sodexo
+  - name: Delivery Hero
+    careers_url: https://jobs.smartrecruiters.com/DeliveryHero
+  - name: AUTO1 Group
+    careers_url: https://jobs.smartrecruiters.com/Auto1
+
+  # ===========================
+  # RECRUITEE (milestone 5, live-verified 2026-09-07 — 200 OK, jobs > 0)
+  # ===========================
+  - name: Great Minds
+    careers_url: https://greatminds.recruitee.com/
+  - name: The Career Centre
+    careers_url: https://thecareersteam.recruitee.com/
+
+  # ===========================
+  # WORKDAY (milestone 5, live-verified 2026-09-07 — 200 OK, jobs > 0)
+  # ===========================
+  - name: Workday
+    careers_url: https://workday.wd5.myworkdayjobs.com/Workday

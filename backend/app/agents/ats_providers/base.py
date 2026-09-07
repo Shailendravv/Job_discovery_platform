@@ -52,7 +52,10 @@ class AtsProvider(ABC):
     @classmethod
     def get_providers(cls) -> list["AtsProvider"]:
         """Instantiate and return all registered providers in a fixed order."""
-        order = ["greenhouse", "lever", "ashby", "workday"]
+        # PLAN.md milestone 5 added workable/smartrecruiters/recruitee; workday
+        # stays last — it's the messiest connector (paginated POST + a second
+        # per-job call for the description) and was built last per PLAN.md §2.
+        order = ["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "recruitee", "workday"]
         instances: list[AtsProvider] = []
         for pid in order:
             klass = cls._registry.get(pid)
@@ -104,9 +107,10 @@ class AtsProvider(ABC):
     # ── Ingestion contract (optional) ──────────────────────────────────
     # Separate from ``fetch()`` so the existing dashboard search path
     # (which calls ``fetch()``) cannot regress when a provider gains
-    # ingestion support. Providers that don't implement it yet (e.g.
-    # Workday, this milestone) are reported by ``jobctl sources doctor``
-    # rather than crashing the run.
+    # ingestion support. All seven providers implement this as of
+    # milestone 5 (Workday was last); a future provider that doesn't yet
+    # is reported by the ingest runner as "not_ingestable" rather than
+    # crashing the run — see runner.py's ``_fetch_source()``.
 
     async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
         """Fetch jobs with full fidelity for the ingestion store.

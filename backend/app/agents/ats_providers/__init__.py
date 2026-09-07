@@ -5,6 +5,9 @@ from app.agents.ats_providers.base import AtsProvider
 from app.agents.ats_providers import greenhouse  # noqa: F401
 from app.agents.ats_providers import lever  # noqa: F401
 from app.agents.ats_providers import ashby  # noqa: F401
+from app.agents.ats_providers import workable  # noqa: F401
+from app.agents.ats_providers import smartrecruiters  # noqa: F401
+from app.agents.ats_providers import recruitee  # noqa: F401
 from app.agents.ats_providers import workday  # noqa: F401
 
 __all__ = [
