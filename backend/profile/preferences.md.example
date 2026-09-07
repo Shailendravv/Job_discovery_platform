@@ -1,0 +1,39 @@
+<!--
+backend/profile/preferences.md.example — PLAN.md §3 "Profile store"
+
+*** SAMPLE VALUES — copy this file to preferences.md and fill in your own ***
+(`profile/*` is gitignored except `*.example` files — see PLAN.md §10.)
+
+The judging agent reads preferences.md directly every /nightly run
+(PLAN.md §5 step 2). Plain prose is fine; it doesn't need to parse as
+anything — write it the way you'd explain your job search to a person.
+-->
+
+# Job search preferences
+
+## Locations
+- Willing to work from: Bangalore, Hyderabad, Pune, or fully remote (India)
+- Not willing to relocate outside India
+- Remote must mean remote — "remote (US only)" doesn't count
+
+## Work authorization
+- Indian citizen, authorized to work in India without sponsorship
+- No US/EU work authorization — postings requiring it are an automatic skip
+
+## Salary floor
+- Minimum: ₹18,00,000 LPA base, negotiable for strong equity/learning upside
+- Below this only worth a "maybe" if the role is an unusually strong fit
+
+## Company size / stage
+- Prefer: Series B+ startups, or established product companies
+- Skip: pre-seed/seed stage with < 20 employees (too much churn risk)
+
+## Domains I want
+- Fintech, developer tools, infrastructure/platform engineering
+
+## Domains I refuse
+- Ad-tech, gambling/betting platforms, crypto trading platforms
+
+## Seniority
+- Targeting: mid-level IC roles (2-5 years of the relevant stack)
+- Not targeting: Staff/Principal/Manager (see hard_filters.md title blocklist)

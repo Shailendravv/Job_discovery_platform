@@ -31,13 +31,105 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 | `npm run lint` | frontend/ | ESLint |
 | `pytest tests/` | backend/ | Unit tests |
 | `pip install -e .` | backend/ | Installs the `jobctl` CLI (ATS ingestion — see `backend/docs/ingest.md`) |
-| `jobctl ingest [--source X] [--org X] [--dry-run]` | backend/ | Fetch, normalize, dedupe, upsert postings from `config/ats_companies.yml` |
+| `jobctl ingest [--source X] [--org X] [--dry-run]` | backend/ | Fetch, normalize, dedupe, upsert postings from `config/ats_companies.yml`; runs the prefilter automatically afterward |
 | `jobctl sources doctor` | backend/ | Live-probe every registry entry; reports 0-job/errored/dead tokens |
+| `jobctl prefilter run \| show <id>` | backend/ | Rule-based reject before judging (`config/prefilter.yml`) — see `backend/docs/prefilter.md` |
+| `jobctl profile add <file> --as resume` | backend/ | Extract text (no LLM) into `profile/resume.md` |
+| `jobctl profile show` | backend/ | Which `profile/*.md` files exist yet |
+| `jobctl list \| show <id> \| next \| judge --apply` | backend/ | The judging loop — see "Judging pipeline" below |
+| `jobctl shortlist [--min-score 7] [--since 7d]` | backend/ | Judged postings worth applying to, highest score first |
 | `jobctl stats` | backend/ | Posting counts overall, per-provider, new in last 24h |
+| `/nightly` | repo root | Runs the full loop unaided — `.claude/commands/nightly.md` |
+| `/calibrate` | repo root | Review sampled verdicts, update `profile/calibration.md` — `.claude/commands/calibrate.md` |
 | `python test/test_integration.py` | backend/ | Integration tests |
 | `python scripts/run_migrations.py` | backend/ | MongoDB schema migrations |
 | `python scripts/create_indexes.py` | backend/ | DB index creation |
 | `playwright install` | backend/ | Required for browser scraping |
+
+## Judging pipeline (jobctl)
+
+PLAN.md is the source design doc — read it before touching any of this.
+This section is the operational summary a fresh session needs to run the
+loop without me explaining anything (PLAN.md §9 milestone 4).
+
+### Profile store
+
+`profile/` (under `backend/`, gitignored except `*.example` — see
+`.gitignore` and PLAN.md §10) holds what the judging agent reads directly,
+every run, in this order:
+
+1. `profile/resume.md` — written by `jobctl profile add <file> --as resume`
+   (plain text extraction, no LLM call, no summarizing)
+2. `profile/preferences.md` — locations, work authorization, salary floor,
+   company size/stage, domains wanted/refused (hand-edited)
+3. `profile/hard_filters.md` — automatic disqualifiers, stated plainly (hand-edited)
+4. `profile/calibration.md` — corrections from `/calibrate`, overrides the
+   rubric below when the two conflict (hand-edited, grows over time)
+
+Copy the matching `*.md.example` template to get started on any of these.
+Do not summarize these files into a prompt template — read the source.
+
+### Verdict schema (`verdicts.json`, written by `jobctl judge --apply`)
+
+```json
+[{
+  "id": "a3f9c1",
+  "verdict": "apply" | "maybe" | "skip",
+  "score": 8,
+  "reasons": ["...", "..."],
+  "concerns": ["..."],
+  "matched_requirements": ["..."],
+  "missing_requirements": ["..."],
+  "judged_by": "claude-code",
+  "judged_at": "2026-09-06T02:11:00Z"
+}]
+```
+
+`id` accepts the short id shown by `jobctl next`/`list`, a longer prefix,
+or the full sha256 id. `judge --apply` rejects unknown ids and refuses to
+overwrite an already-judged posting unless `--force` is passed — both as
+per-verdict outcomes, so one bad id in a batch doesn't cost the rest.
+
+### Rubric
+
+Score 1-10 on: requirement overlap with actual experience, seniority fit,
+location/visa feasibility, domain interest, and company-stage fit. Then:
+
+- **apply** — meets the core requirements, would take the interview
+- **maybe** — one real gap, but worth a look
+- **skip** — hard filter hit, or the gap is disqualifying
+
+Be honest, not encouraging. A posting demanding 5 years for someone with 1
+is a `skip`, not a `maybe`. State the specific missing requirement rather
+than a generic "may not be a fit." Never invent experience that isn't
+there in `matched_requirements`.
+
+### The nightly loop
+
+`/nightly` (`.claude/commands/nightly.md`) runs: `jobctl ingest --json` →
+read the profile files above → loop `jobctl next --limit 25 --format md` →
+judge each batch → `jobctl judge --apply` → until `next` returns empty →
+`jobctl shortlist --min-score 7 --since 24h` → summarize counts.
+
+**`.claude/commands/*.md` are not committed to this repo** — `.claude/` is
+entirely gitignored here (settings.json, skills/ are local-only too). This
+section is the durable, committed source of truth for the sequence; a
+fresh clone can reconstruct `nightly.md`/`calibrate.md` from it even
+without the slash-command shortcut.
+
+### Calibration
+
+`/calibrate` (`.claude/commands/calibrate.md`), roughly every ~200
+judgments: sample ~20 recent verdicts across apply/maybe/skip, get each
+marked right or wrong, and append concrete rules ("SDET roles are skip
+even when the stack matches") to `profile/calibration.md` under a dated
+heading — never rewrite prior entries.
+
+### Full design
+
+`backend/docs/judging.md` (query/verdicts/shortlist/profile_store),
+`backend/docs/prefilter.md` (the rule-based reject stage before any of
+this), `backend/docs/ingest.md` (ATS connectors, source registry).
 
 ## Documentation workflow
 

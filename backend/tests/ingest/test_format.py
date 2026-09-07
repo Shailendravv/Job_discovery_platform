@@ -3,7 +3,13 @@ the ~1200-char description truncation."""
 
 from datetime import datetime, timezone
 
-from app.ingest.format import DESCRIPTION_TRUNCATE_CHARS, render_posting_md, render_posting_summary, truncate_description
+from app.ingest.format import (
+    DESCRIPTION_TRUNCATE_CHARS,
+    render_posting_md,
+    render_posting_summary,
+    render_shortlist_entry,
+    truncate_description,
+)
 
 
 def test_truncate_leaves_short_text_untouched():
@@ -65,3 +71,37 @@ def test_render_posting_summary_shape():
     assert summary["judged"] is True
     assert summary["verdict"] == "apply"
     assert len(summary["description_text"]) == DESCRIPTION_TRUNCATE_CHARS
+
+
+def test_render_shortlist_entry_merges_verdict_and_joined_posting():
+    verdict_doc = {
+        "_id": "full-id-456",
+        "verdict": "apply",
+        "score": 9,
+        "reasons": ["strong stack match"],
+        "missing_requirements": [],
+        "judged_at": datetime(2026, 9, 6, tzinfo=timezone.utc),
+        "posting": {
+            "title": "Backend Engineer",
+            "company_name": "Stripe",
+            "location": "Bangalore",
+            "provider": "greenhouse",
+            "url": "https://example.com/job/1",
+        },
+    }
+    entry = render_shortlist_entry(verdict_doc, "a3f9c1")
+
+    assert entry["id"] == "a3f9c1"
+    assert entry["full_id"] == "full-id-456"
+    assert entry["title"] == "Backend Engineer"
+    assert entry["company_name"] == "Stripe"
+    assert entry["score"] == 9
+    assert entry["verdict"] == "apply"
+    assert entry["reasons"] == ["strong stack match"]
+
+
+def test_render_shortlist_entry_handles_missing_posting_subdocument():
+    entry = render_shortlist_entry({"_id": "x", "verdict": "maybe", "score": 7}, "abc")
+    assert entry["title"] is None
+    assert entry["reasons"] == []
+    assert entry["missing_requirements"] == []

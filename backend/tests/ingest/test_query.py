@@ -6,7 +6,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.ingest.query import DEFAULT_NEXT_LIMIT, PostingFilter, build_query, list_postings, next_postings
+from app.ingest.query import (
+    DEFAULT_NEXT_LIMIT,
+    DEFAULT_SHORTLIST_LIMIT,
+    PostingFilter,
+    ShortlistFilter,
+    build_query,
+    build_shortlist_match,
+    list_postings,
+    next_postings,
+    shortlist_postings,
+)
 
 NOW = datetime(2026, 9, 7, tzinfo=timezone.utc)
 
@@ -77,3 +87,57 @@ async def test_next_postings_is_unjudged_ascending_fifo():
 def test_next_postings_only_serves_prefilter_passed():
     query = build_query(PostingFilter(judged=False, prefilter_status="passed"))
     assert query["prefilter_status"] == "passed"
+
+
+# --- shortlist (milestone 4, PLAN.md §3 `jobctl shortlist`) ---
+
+
+def test_shortlist_match_defaults_to_apply_and_maybe_at_min_score():
+    match = build_shortlist_match(ShortlistFilter())
+    assert match["score"] == {"$gte": 7}
+    assert match["verdict"] == {"$in": ["apply", "maybe"]}
+    assert "judged_at" not in match
+
+
+def test_shortlist_match_applies_since_window():
+    match = build_shortlist_match(ShortlistFilter(since=timedelta(hours=24)), now=NOW)
+    assert match["judged_at"] == {"$gte": NOW - timedelta(hours=24)}
+
+
+def test_shortlist_match_custom_min_score():
+    match = build_shortlist_match(ShortlistFilter(min_score=9))
+    assert match["score"] == {"$gte": 9}
+
+
+def _mock_aggregate_db(results):
+    db = MagicMock()
+    db.verdicts = MagicMock()
+    cursor = MagicMock()
+    cursor.to_list = AsyncMock(return_value=results)
+    db.verdicts.aggregate.return_value = cursor
+    return db, cursor
+
+
+@pytest.mark.asyncio
+async def test_shortlist_postings_builds_lookup_pipeline_and_returns_joined_docs():
+    joined = [{"_id": "a" * 64, "score": 9, "verdict": "apply", "posting": {"title": "Backend Engineer"}}]
+    db, cursor = _mock_aggregate_db(joined)
+
+    result = await shortlist_postings(db, ShortlistFilter())
+
+    assert result == joined
+    pipeline = db.verdicts.aggregate.call_args.args[0]
+    assert pipeline[0] == {"$match": build_shortlist_match(ShortlistFilter())}
+    assert pipeline[2] == {"$unwind": "$posting"}
+    # Duplicate filter, sort, and limit all run *after* the join — limiting
+    # before filtering out duplicates could silently drop eligible results.
+    assert pipeline[3] == {"$match": {"posting.duplicate_of": None}}
+    assert pipeline[-1] == {"$limit": DEFAULT_SHORTLIST_LIMIT}
+    cursor.to_list.assert_awaited_once_with(length=DEFAULT_SHORTLIST_LIMIT)
+
+
+@pytest.mark.asyncio
+async def test_shortlist_postings_empty_when_nothing_clears_the_bar():
+    db, _ = _mock_aggregate_db([])
+    result = await shortlist_postings(db, ShortlistFilter(min_score=10))
+    assert result == []

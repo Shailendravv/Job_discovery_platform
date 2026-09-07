@@ -9,3 +9,9 @@ nul
 .pytest_cache/
 
 docs/
+
+# Profile store (PLAN.md §2/§10) — resume + preferences are personal data,
+# never commit them to a public repo. Seed templates stay tracked, same
+# split as .env/.env.example above.
+profile/*
+!profile/*.example

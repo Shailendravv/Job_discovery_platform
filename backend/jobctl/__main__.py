@@ -1,4 +1,4 @@
-"""jobctl entry point (PLAN.md §3). Milestone 1 + 2 commands:
+"""jobctl entry point (PLAN.md §3). Milestone 1 + 2 + 4 commands:
 
     jobctl ingest [--source X] [--org X] [--dry-run] [--json]
     jobctl sources list [--json]
@@ -9,9 +9,11 @@
     jobctl show <id> [--json]
     jobctl next [--limit 25] [--format md|json]
     jobctl judge --apply verdicts.json [--force] [--json]
+    jobctl profile add <file> --as resume [--json]
+    jobctl profile show [--json]
+    jobctl shortlist [--min-score 7] [--since 7d] [--limit 50] [--json]
 
-Later milestones add ``profile``, ``shortlist``, ``mark``, ``tailor``,
-``cover``, ``digest``.
+Later milestones add ``mark``, ``tailor``, ``cover``, ``digest``.
 """
 
 import asyncio
@@ -25,11 +27,27 @@ import typer
 from pydantic import ValidationError
 
 from app.ingest.doctor import run_doctor, summarize
-from app.ingest.format import render_posting_md, render_posting_summary
+from app.ingest.format import render_posting_md, render_posting_summary, render_shortlist_entry
 from app.ingest.ids import assign_short_ids, resolve_posting_id, short_id
 from app.ingest.prefilter import CONFIG_PATH as PREFILTER_CONFIG_PATH
 from app.ingest.prefilter import load_prefilter_config, run_prefilter
-from app.ingest.query import DEFAULT_LIST_LIMIT, DEFAULT_NEXT_LIMIT, PostingFilter, list_postings, next_postings
+from app.ingest.profile_store import (
+    ADDABLE_KEYS,
+    UnsupportedProfileFileError,
+    add_profile_file,
+    profile_status,
+)
+from app.ingest.query import (
+    DEFAULT_LIST_LIMIT,
+    DEFAULT_NEXT_LIMIT,
+    DEFAULT_SHORTLIST_LIMIT,
+    DEFAULT_SHORTLIST_MIN_SCORE,
+    PostingFilter,
+    ShortlistFilter,
+    list_postings,
+    next_postings,
+    shortlist_postings,
+)
 from app.ingest.registry import load_and_resolve_sources
 from app.ingest.runner import run_ingest
 from app.ingest.time_util import parse_duration
@@ -43,6 +61,8 @@ sources_app = typer.Typer(add_completion=False, help="Inspect the ATS company re
 app.add_typer(sources_app, name="sources")
 prefilter_app = typer.Typer(add_completion=False, help="Rule-based prefilter between ingest and next (PLAN.md §4).")
 app.add_typer(prefilter_app, name="prefilter")
+profile_app = typer.Typer(add_completion=False, help="The profile/ store the judging agent reads directly (PLAN.md §3).")
+app.add_typer(profile_app, name="profile")
 
 
 def _print(data: dict, as_json: bool) -> None:
@@ -459,6 +479,101 @@ def judge(
         typer.echo(f"rejected: {len(data['rejected'])}")
         for r in data["rejected"]:
             typer.echo(f"  - {r['id']}: {r['reason']}")
+
+
+@profile_app.command("add")
+def profile_add(
+    file: Path = typer.Argument(..., exists=True, readable=True, help="Resume file: .pdf, .docx, .md, or .txt"),
+    as_: str = typer.Option(..., "--as", help=f"Which profile file to write: {', '.join(sorted(ADDABLE_KEYS))}"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Extract text from a resume file and write it to ``profile/resume.md``
+    (PLAN.md §3). Plain extraction only — no LLM call, no summarizing;
+    the agent reads the source directly per PLAN.md §3. The three prose
+    files (preferences/hard_filters/calibration) are hand-edited, not added
+    this way."""
+    try:
+        status = add_profile_file(file, as_key=as_)
+    except UnsupportedProfileFileError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    if json_out:
+        typer.echo(jsonlib.dumps(status.to_dict(), indent=2))
+        return
+    typer.echo(f"wrote {status.path} ({status.size_bytes} bytes)")
+
+
+@profile_app.command("show")
+def profile_show(json_out: bool = typer.Option(False, "--json")) -> None:
+    """Which profile/ files exist yet — what ``/nightly`` reads before every
+    judging run (PLAN.md §3)."""
+    rows = [s.to_dict() for s in profile_status()]
+
+    if json_out:
+        typer.echo(jsonlib.dumps(rows, indent=2))
+        return
+
+    missing = [r["name"] for r in rows if not r["exists"]]
+    for r in rows:
+        # Plain ASCII, not unicode ✓/✗ — a Windows console defaulting to
+        # cp1252 (no PYTHONIOENCODING set) raises UnicodeEncodeError on
+        # those, and this output is meant to be readable in any terminal.
+        marker = "[x]" if r["exists"] else "[ ]"
+        detail = f"{r['size_bytes']} bytes" if r["exists"] else "missing"
+        typer.echo(f"{marker} {r['name']:<16} {detail}  ({r['path']})")
+    if missing:
+        typer.echo(f"\n{len(missing)} missing: {', '.join(missing)}")
+        if "resume.md" in missing:
+            typer.echo("  run `jobctl profile add <resume.pdf> --as resume` to add it")
+        prose_missing = [m for m in missing if m != "resume.md"]
+        if prose_missing:
+            typer.echo(f"  hand-write {', '.join(prose_missing)} under profile/ (PLAN.md §3)")
+
+
+@app.command()
+def shortlist(
+    min_score: int = typer.Option(DEFAULT_SHORTLIST_MIN_SCORE, "--min-score"),
+    since: Optional[str] = typer.Option(None, "--since", help="Time window on judged_at, e.g. 24h, 7d."),
+    limit: int = typer.Option(DEFAULT_SHORTLIST_LIMIT, "--limit"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Judged postings worth applying to: verdict apply/maybe, score >=
+    --min-score, highest score first (PLAN.md §3). A ``skip`` never
+    appears here regardless of score — see PLAN.md §4's rubric."""
+    try:
+        since_delta = parse_duration(since) if since else None
+    except ValueError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    filters = ShortlistFilter(min_score=min_score, since=since_delta)
+
+    async def _run() -> list[dict]:
+        async with db_session() as db:
+            return await shortlist_postings(db, filters, limit=limit)
+
+    docs = asyncio.run(_run())
+    if not docs:
+        if json_out:
+            typer.echo("[]")
+        return
+
+    display_ids = assign_short_ids([d["_id"] for d in docs])
+    rows = [render_shortlist_entry(d, display_ids[d["_id"]]) for d in docs]
+
+    if json_out:
+        typer.echo(jsonlib.dumps(rows, indent=2, default=str))
+        return
+
+    for row in rows:
+        typer.echo(
+            f"[{row['id']}] score {row['score']} ({row['verdict']}) — "
+            f"{row['title']} — {row['company_name']} ({row['provider']})"
+        )
+        if row["reasons"]:
+            typer.echo(f"    {'; '.join(row['reasons'])}")
+    typer.echo(f"\n{len(rows)} shortlisted")
 
 
 if __name__ == "__main__":

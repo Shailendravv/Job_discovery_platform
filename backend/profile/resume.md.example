@@ -1,0 +1,17 @@
+<!--
+backend/profile/resume.md.example — PLAN.md §3 "Profile store"
+
+This file is normally generated, not hand-written:
+
+    jobctl profile add /path/to/your/resume.pdf --as resume
+    jobctl profile add /path/to/your/resume.docx --as resume
+
+That extracts plain text (no LLM call, no summarizing — PLAN.md §3: "the
+agent reads these files directly. Do not summarize them into a prompt
+template") and writes it to profile/resume.md, gitignored like the rest of
+profile/ (PLAN.md §10). If you'd rather write it by hand, .md/.txt input to
+`profile add` is also accepted unchanged, or just create profile/resume.md
+yourself in whatever format reads naturally — there's no schema to match.
+
+`jobctl profile show` reports whether profile/resume.md exists yet.
+-->

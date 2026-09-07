@@ -1,0 +1,27 @@
+<!--
+backend/profile/hard_filters.md.example — PLAN.md §3 "Profile store"
+
+*** SAMPLE VALUES — copy this file to hard_filters.md and fill in your own ***
+
+These are the disqualifiers the judging agent applies at the "skip" end of
+the rubric (PLAN.md §4/§5: "skip — hard filter hit, or the gap is
+disqualifying"). This file is prose for the *agent* to reason with when
+judging (jobctl next / jobctl judge). It is deliberately separate from
+backend/config/prefilter.yml, which encodes the same kind of rule but as
+*machine*-evaluable regex/substring checks the CLI runs before the agent
+ever sees a posting (PLAN.md §4 step 1) — keep both in sync when a rule
+changes, they serve different consumers.
+-->
+
+# Automatic disqualifiers
+
+State these plainly — the agent should skip a posting the moment one of
+these is true, no matter how good the rest of the match looks.
+
+- Requires security clearance
+- Requires US citizenship or US work authorization
+- Requires more than 3 years of professional experience
+- Title contains Staff / Principal / Director / VP / Head of
+- On-site only, not in Bangalore/Hyderabad/Pune, and not remote
+- Contract/temp roles under 6 months
+- Unpaid or "equity only" compensation

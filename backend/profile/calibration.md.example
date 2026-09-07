@@ -1,0 +1,25 @@
+<!--
+backend/profile/calibration.md.example — PLAN.md §5 "Calibration"
+
+*** STARTS EMPTY — copy this file to calibration.md ***
+
+This file grows over time. Every ~200 judgments, run `/calibrate`: you mark
+~20 verdicts right or wrong, and the agent appends a correction below as a
+concrete rule. The agent reads this file on every /nightly run, after
+resume.md/preferences.md/hard_filters.md — corrections here override the
+general rubric when they conflict, since they're calibrated against your
+actual right/wrong feedback.
+
+Format: one bullet per correction, newest at the bottom, plain language.
+Do not delete old entries even if a newer one narrows them — the history is
+part of what makes future calibration sessions useful.
+-->
+
+# Calibration log
+
+(No corrections yet — this fills in after the first `/calibrate` session.)
+
+<!-- Example of what an entry looks like, once you have one:
+- 2026-09-20: SDET/QA automation roles are `skip` even when the stack
+  matches (Python/Selenium) — I'm not looking for testing roles.
+-->

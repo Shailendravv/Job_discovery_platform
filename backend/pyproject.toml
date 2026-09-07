@@ -14,6 +14,13 @@ dependencies = [
     "pydantic-settings",
     "pyyaml",
     "httpx",
+    # jobctl profile add (milestone 4) reuses the resume-upload endpoint's
+    # text extraction (app.services.PDF_service / docx_service) — no LLM
+    # call, but those modules import these at module load time.
+    "pypdf",
+    "pymupdf",
+    "python-docx",
+    "reportlab",
 ]
 
 [project.scripts]

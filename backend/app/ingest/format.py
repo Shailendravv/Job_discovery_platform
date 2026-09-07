@@ -39,6 +39,30 @@ def render_posting_md(doc: dict, display_id: str) -> str:
     )
 
 
+def render_shortlist_entry(verdict_doc: dict, display_id: str) -> dict:
+    """One ``jobctl shortlist`` row — merges the verdict fields (score,
+    reasons, missing requirements) with the joined posting's display fields
+    (milestone 4). ``verdict_doc`` is one document from
+    ``query.shortlist_postings``: a ``verdicts`` document with an embedded
+    ``posting`` subdocument from the ``$lookup``."""
+    posting = verdict_doc.get("posting") or {}
+    return {
+        "id": display_id,
+        "full_id": verdict_doc.get("_id"),
+        "title": posting.get("title"),
+        "company_name": posting.get("company_name"),
+        "location": posting.get("location"),
+        "remote_flag": posting.get("remote_flag"),
+        "provider": posting.get("provider"),
+        "url": posting.get("url"),
+        "verdict": verdict_doc.get("verdict"),
+        "score": verdict_doc.get("score"),
+        "reasons": verdict_doc.get("reasons") or [],
+        "missing_requirements": verdict_doc.get("missing_requirements") or [],
+        "judged_at": verdict_doc.get("judged_at"),
+    }
+
+
 def render_posting_summary(doc: dict, display_id: str) -> dict:
     """The JSON-list shape used by ``list``/``next --format json`` and
     ``show`` — same fields, truncated description, plus the display id so
