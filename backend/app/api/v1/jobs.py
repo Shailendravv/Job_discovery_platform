@@ -11,6 +11,7 @@ from app.models.job import (
 from app.api.deps import get_db
 from app.services.db_service import get_jobs, save_jobs, get_job_by_id, get_latest_resume, get_tailor_session_for_job
 from app.agents.job_workflow import search_jobs_workflow
+from app.utils.accessibility_tree_to_html import tree_to_html
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -96,6 +97,10 @@ async def get_job_detail(job_id: str, db=Depends(get_db)):
     for date_field in ("created_at", "updated_at"):
         if date_field in job and job[date_field] is not None:
             job[date_field] = job[date_field].isoformat()
+
+    # Ensure description is HTML (not raw accessibility tree)
+    if job.get("description"):
+        job["description"] = tree_to_html(job["description"])
 
     # ── Build resume lifecycle state ──
     active_resume = None

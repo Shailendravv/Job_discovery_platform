@@ -9,12 +9,14 @@ URL patterns matched:
 - ``boards.greenhouse.io/{slug}``
 """
 
+import html
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.agents.ats_providers._http import fetch_json
-from app.agents.ats_providers.base import AtsProvider
+from app.agents.ats_providers.base import AtsProvider, RawPosting
+from app.services.html_service import extract_text_from_html
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +66,30 @@ def _resolve_api_url(company: dict) -> Optional[str]:
     return None
 
 
+def _resolve_postings_url(company: dict) -> Optional[str]:
+    """Same endpoint as ``_resolve_api_url`` but with ``content=true`` so the
+    response includes each job's full HTML description — required for
+    ingestion (the legacy ``fetch()`` path never needed descriptions)."""
+    api_url = _resolve_api_url(company)
+    if not api_url:
+        return None
+    separator = "&" if "?" in api_url else "?"
+    return f"{api_url}{separator}content=true"
+
+
+def _to_epoch_dt(value: Any) -> Optional[datetime]:
+    """Parse ISO date string to an aware datetime. Returns None if unparseable."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        return None
+
+
 def _to_epoch_ms(value: Any) -> Optional[int]:
     """Parse ISO date string to epoch ms. Returns None if unparseable."""
     if not value:
@@ -107,6 +133,69 @@ class GreenhouseProvider(AtsProvider):
                 "source": "greenhouse",
             })
         return results
+
+    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+        postings_url = _resolve_postings_url(company)
+        if not postings_url:
+            return []
+        _assert_safe_url(postings_url)
+        json_data = await fetch_json(postings_url, redirect="error")
+        jobs_raw = json_data.get("jobs") if isinstance(json_data, dict) else []
+        if not isinstance(jobs_raw, list):
+            return []
+
+        results: list[RawPosting] = []
+        for j in jobs_raw:
+            if not isinstance(j, dict):
+                continue
+            url = (j.get("absolute_url") or "").strip()
+            job_id = j.get("id")
+            if not url or job_id is None:
+                continue
+
+            # ``content`` is HTML with entities escaped (e.g. "&amp;nbsp;") —
+            # unescape first, then strip tags with the shared helper.
+            raw_content = j.get("content") or ""
+            description_text = extract_text_from_html(html.unescape(raw_content)) if raw_content else ""
+
+            location_str = _get_nested_str(j, "location", "name")
+            offices = j.get("offices") or []
+            office_names = " ".join(
+                (o.get("name") or "") for o in offices if isinstance(o, dict)
+            )
+            remote_flag = _looks_remote(location_str, office_names)
+
+            raw_debug = {k: v for k, v in j.items() if k != "content"}
+
+            results.append(RawPosting(
+                provider_job_id=str(job_id),
+                title=(j.get("title") or "").strip(),
+                location=location_str or None,
+                remote_flag=remote_flag,
+                employment_type=None,  # Greenhouse doesn't expose this in the boards API
+                description_text=description_text,
+                salary=None,
+                url=url,
+                apply_url=url,
+                posted_at=_to_epoch_dt(j.get("first_published")),
+                raw=raw_debug,
+            ))
+        return results
+
+
+def _looks_remote(*texts: str) -> Optional[bool]:
+    """Best-effort remote detection from free-text location/office fields.
+
+    Returns None (unknown) rather than False when there's no signal either
+    way — the prefilter (milestone 3) treats None as "don't hard-filter on
+    this", which is safer than guessing wrong.
+    """
+    combined = " ".join(t for t in texts if t).lower()
+    if not combined:
+        return None
+    if "remote" in combined:
+        return True
+    return None
 
 
 def _get_nested_str(obj: Any, *keys: str) -> str:

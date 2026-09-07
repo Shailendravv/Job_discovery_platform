@@ -30,6 +30,10 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 | `npm run build` | frontend/ | `tsc -b && vite build` |
 | `npm run lint` | frontend/ | ESLint |
 | `pytest tests/` | backend/ | Unit tests |
+| `pip install -e .` | backend/ | Installs the `jobctl` CLI (ATS ingestion — see `backend/docs/ingest.md`) |
+| `jobctl ingest [--source X] [--org X] [--dry-run]` | backend/ | Fetch, normalize, dedupe, upsert postings from `config/ats_companies.yml` |
+| `jobctl sources doctor` | backend/ | Live-probe every registry entry; reports 0-job/errored/dead tokens |
+| `jobctl stats` | backend/ | Posting counts overall, per-provider, new in last 24h |
 | `python test/test_integration.py` | backend/ | Integration tests |
 | `python scripts/run_migrations.py` | backend/ | MongoDB schema migrations |
 | `python scripts/create_indexes.py` | backend/ | DB index creation |
@@ -82,3 +86,49 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 - Frontend needs `VITE_API_URL=http://localhost:8000` in `frontend/.env`
 - `.gitignore` now blocks `.env`, `.env.*`, and `secrets*` patterns (but allows `.env.example`)
 - MCP servers must be running before backend starts (backend depends on them)
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**This project has a knowledge graph. Start with the code-review-graph
+MCP tools to narrow scope, then read the source.** The graph is cheaper than scanning files and
+gives you structural context (callers, dependents, test coverage) that file search cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes_tool` or `query_graph_tool` instead of Grep
+- **Understanding impact**: `get_impact_radius_tool` instead of manually tracing imports
+- **Code review**: `detect_changes_tool` + `get_review_context_tool` instead of reading entire files
+- **Finding relationships**: `query_graph_tool` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview_tool` + `list_communities_tool`
+
+### Verify in the source
+
+- Narrow scope with the graph, then read the source. Do not change code from graph output alone.
+- For any non-trivial change, read the implementation and the relevant tests before concluding.
+- Verify the exact source when touching behavior, database logic, migrations, retries, fallbacks,
+  recovery, or compatibility code.
+- When the graph and the source disagree, the source wins. The graph may be stale or may not
+  model that relationship.
+- An empty graph result can mean "not indexed" or "not statically visible", not "does not exist".
+
+### Key Tools
+
+| Tool | Use when |
+| ------ | ---------- |
+| `detect_changes_tool` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context_tool` | Need source snippets for review — token-efficient |
+| `get_impact_radius_tool` | Understanding blast radius of a change |
+| `get_affected_flows_tool` | Finding which execution paths are impacted |
+| `query_graph_tool` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes_tool` | Finding functions/classes by name or keyword |
+| `get_architecture_overview_tool` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes_tool` for code review.
+3. Use `get_affected_flows_tool` to understand impact.
+4. Use `query_graph_tool` pattern="tests_for" to check coverage.
+<!-- /code-review-graph MCP tools -->

@@ -6,7 +6,29 @@ discover and iterate all providers without manual imports.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional, TypedDict
+
+
+class RawPosting(TypedDict, total=False):
+    """Full-fidelity posting returned by ``fetch_postings()``.
+
+    Distinct from the lossy dict returned by the legacy ``fetch()`` (which
+    only carries what the dashboard search UI needs). This is the shape the
+    ingestion pipeline (``backend/app/ingest/``) normalizes into a ``Posting``.
+    """
+
+    provider_job_id: str
+    title: str
+    location: Optional[str]
+    remote_flag: Optional[bool]
+    employment_type: Optional[str]
+    description_text: str
+    salary: Optional[str]
+    url: str
+    apply_url: Optional[str]
+    posted_at: Optional[datetime]
+    raw: dict[str, Any]
 
 
 class AtsProvider(ABC):
@@ -78,3 +100,35 @@ class AtsProvider(ABC):
             Normalised job listings.
         """
         ...
+
+    # ── Ingestion contract (optional) ──────────────────────────────────
+    # Separate from ``fetch()`` so the existing dashboard search path
+    # (which calls ``fetch()``) cannot regress when a provider gains
+    # ingestion support. Providers that don't implement it yet (e.g.
+    # Workday, this milestone) are reported by ``jobctl sources doctor``
+    # rather than crashing the run.
+
+    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+        """Fetch jobs with full fidelity for the ingestion store.
+
+        Unlike ``fetch()``, this must include a stable ``provider_job_id``,
+        the full ``description_text``, and the ``raw`` source payload so the
+        ingest layer can compute a deterministic id and a debuggable record.
+
+        Parameters
+        ----------
+        company : dict
+            Company config entry.
+        api_url : str
+            The API URL returned by ``detect()``.
+
+        Returns
+        -------
+        list[RawPosting]
+
+        Raises
+        ------
+        NotImplementedError
+            If this provider does not yet support ingestion.
+        """
+        raise NotImplementedError(f"{self.id or type(self).__name__}: fetch_postings() not implemented")

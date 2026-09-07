@@ -6,3 +6,11 @@ logs
 .env.*
 secrets*
 !.env.example
+# Added by code-review-graph
+.code-review-graph/
+
+.claude/
+document/
+.mcp.json
+
+AGENTS.md

@@ -20,3 +20,7 @@ mammoth
 htmldocx
 beautifulsoup4
 playwright
+pyyaml
+typer
+pytest
+pytest-asyncio

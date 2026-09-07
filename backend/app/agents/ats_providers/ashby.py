@@ -15,11 +15,11 @@ Special handling:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from app.agents.ats_providers._http import fetch_with_retry
-from app.agents.ats_providers.base import AtsProvider
+from app.agents.ats_providers.base import AtsProvider, RawPosting
 
 log = logging.getLogger(__name__)
 
@@ -202,4 +202,53 @@ class AshbyProvider(AtsProvider):
                 "posted_date": posted,
                 "source": "ashby",
             })
+        return results
+
+    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+        json_data = await fetch_with_retry(
+            api_url,
+            timeout_ms=ASHBY_TIMEOUT_MS,
+            retries=ASHBY_RETRIES,
+            redirect="error",
+        )
+        jobs_raw = json_data.get("jobs") if isinstance(json_data, dict) else []
+        if not isinstance(jobs_raw, list):
+            return []
+
+        results: list[RawPosting] = []
+        for j in jobs_raw:
+            if not isinstance(j, dict):
+                continue
+            # Unlisted jobs are typically closed/internal — the legacy fetch()
+            # doesn't check this since Ashby usually omits them entirely, but
+            # ingestion should not treat a stale unlisted row as "new" either.
+            if j.get("isListed") is False:
+                continue
+
+            url = (j.get("jobUrl") or "").strip()
+            job_id = j.get("id")
+            if not url or not job_id:
+                continue
+
+            posted_at = None
+            posted_ms = _to_epoch_ms(j.get("publishedAt"))
+            if posted_ms is not None:
+                posted_at = datetime.fromtimestamp(posted_ms / 1000.0, tz=timezone.utc)
+
+            employment_type = (j.get("employmentType") or "").strip() or None
+            remote_flag = bool(j.get("isRemote")) if "isRemote" in j else None
+
+            results.append(RawPosting(
+                provider_job_id=str(job_id),
+                title=(j.get("title") or "").strip(),
+                location=_format_location(j) or None,
+                remote_flag=remote_flag,
+                employment_type=employment_type,
+                description_text=(j.get("descriptionPlain") or "").strip(),
+                salary=_parse_compensation(j),
+                url=url,
+                apply_url=(j.get("applyUrl") or "").strip() or url,
+                posted_at=posted_at,
+                raw=j,
+            ))
         return results

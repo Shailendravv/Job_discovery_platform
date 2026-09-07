@@ -13,6 +13,7 @@ from typing import List, Optional
 
 from app.agents.tools.skill_extraction import extract_skills_from_text
 from app.agents.tools.browse_jobs import browse_extract, browse_fetch
+from app.utils.accessibility_tree_to_html import tree_to_html
 from app.agents.search_provider import provider
 from app.agents.ats_workflow import scan_ats_companies
 from app.core.config import settings
@@ -271,7 +272,9 @@ def _collect_unique_urls_only(batch: List[dict], seen_urls: set) -> List[dict]:
 def _build_job(result: dict, extracted: dict, snippet: str, base_title: str, url: str) -> dict | None:
     """Build a JobResult dict from extracted + raw result data. Returns None if unusable."""
     title = (extracted.get("title") or base_title).strip()
-    description = (extracted.get("description") or snippet).strip()
+    description = (extracted.get("description") or snippet or "").strip()
+    if description:
+        description = tree_to_html(description)
     if not title and not description:
         return None
     return JobResult(

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ExternalLink, Upload, CloudUpload, CheckCircle, Download, Sparkles, FileText, AlertCircle, X } from "lucide-react";
 import { api, ApiError } from "@/services/api";
 import type { JobDetail, ResumeUploadResponse, ResumeTailorResponse } from "@/types";
+import { sanitizeHtml, isHtmlContent, isTreeFormat, extractTreeText } from "@/utils/sanitize";
 
 export const JobDetailsView: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -326,9 +327,20 @@ export const JobDetailsView: React.FC = () => {
             <div className="space-y-6">
               <div>
                 <h2 className="text-base font-bold text-slate-900 mb-2">About the Role</h2>
-                <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
-                  {job.description || "No description provided."}
-                </p>
+                {job.description && isHtmlContent(job.description) ? (
+                  <div
+                    className="text-sm text-slate-600 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-slate-900 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-slate-800 [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:space-y-1 [&_li]:text-sm [&_p]:mb-2 [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_a]:hover:text-blue-800"
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(job.description) }}
+                  />
+                ) : job.description && isTreeFormat(job.description) ? (
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                    {extractTreeText(job.description)}
+                  </p>
+                ) : (
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                    {job.description || "No description provided."}
+                  </p>
+                )}
               </div>
 
               {job.requirements && job.requirements.length > 0 && (

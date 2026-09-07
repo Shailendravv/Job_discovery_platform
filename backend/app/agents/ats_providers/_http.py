@@ -5,9 +5,12 @@ and SSRF-safe redirect control.
 """
 
 import asyncio
+import contextvars
 import logging
 import random
+import time
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -16,6 +19,57 @@ log = logging.getLogger(__name__)
 # Defaults
 DEFAULT_TIMEOUT_MS = 10_000
 DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; job-app-ats/1.0)"
+
+
+class HostThrottle:
+    """Per-hostname min-interval throttle (max ~1 request/sec/host).
+
+    Used only by the ingest CLI's batch runs across many companies on the
+    same ATS host (e.g. many orgs under ``boards-api.greenhouse.io``). The
+    live dashboard search path never sets this — it fetches one org at a
+    time and does not need it — so it stays opt-in via a contextvar rather
+    than a module-level global that would also throttle that path.
+    """
+
+    def __init__(self, min_interval_seconds: float = 1.0) -> None:
+        self._min_interval = min_interval_seconds
+        self._last_request: dict[str, float] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _lock_for(self, host: str) -> asyncio.Lock:
+        lock = self._locks.get(host)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[host] = lock
+        return lock
+
+    async def wait(self, url: str) -> None:
+        host = urlparse(url).hostname or ""
+        if not host:
+            return
+        async with self._lock_for(host):
+            last = self._last_request.get(host)
+            now = time.monotonic()
+            if last is not None:
+                elapsed = now - last
+                remaining = self._min_interval - elapsed
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+            self._last_request[host] = time.monotonic()
+
+
+_current_throttle: contextvars.ContextVar[Optional[HostThrottle]] = contextvars.ContextVar(
+    "ats_host_throttle", default=None
+)
+
+
+def set_host_throttle(throttle: Optional[HostThrottle]) -> contextvars.Token:
+    """Install a ``HostThrottle`` for the current context. Returns a reset token."""
+    return _current_throttle.set(throttle)
+
+
+def reset_host_throttle(token: contextvars.Token) -> None:
+    _current_throttle.reset(token)
 
 
 async def fetch_json(
@@ -83,6 +137,10 @@ async def _fetch(
     redirect: str = "follow",
 ) -> httpx.Response:
     """Low-level async HTTP request."""
+    throttle = _current_throttle.get()
+    if throttle is not None:
+        await throttle.wait(url)
+
     request_headers = {
         "User-Agent": DEFAULT_USER_AGENT,
     }
