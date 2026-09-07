@@ -28,6 +28,7 @@ class PostingFilter:
     org: Optional[str] = None
     since: Optional[timedelta] = None   # first_seen_at >= now - since
     include_duplicates: bool = False    # duplicate_of postings are excluded by default
+    prefilter_status: Optional[str] = None  # None = don't filter on prefilter outcome (milestone 3)
 
 
 def build_query(filters: PostingFilter, *, now: Optional[datetime] = None) -> dict:
@@ -37,6 +38,8 @@ def build_query(filters: PostingFilter, *, now: Optional[datetime] = None) -> di
         query["judged"] = filters.judged
     if filters.verdict is not None:
         query["verdict"] = filters.verdict
+    if filters.prefilter_status is not None:
+        query["prefilter_status"] = filters.prefilter_status
     if filters.provider is not None:
         query["provider"] = filters.provider
     if filters.org is not None:
@@ -64,7 +67,12 @@ async def list_postings(
 
 
 async def next_postings(db: AsyncIOMotorDatabase, *, limit: int = DEFAULT_NEXT_LIMIT) -> list[dict]:
-    """The agent's judging queue: unjudged, non-duplicate postings, oldest
-    first (FIFO) so nothing waits forever behind a stream of fresher ones."""
-    filters = PostingFilter(judged=False)
+    """The agent's judging queue: unjudged, non-duplicate postings that
+    cleared the milestone-3 prefilter (``prefilter_status="passed"``),
+    oldest first (FIFO) so nothing waits forever behind a stream of fresher
+    ones. A posting not yet prefiltered (``prefiltered=False``) is excluded
+    until ``jobctl prefilter run`` classifies it -- ingest runs that
+    automatically, so this is only a concern for postings that predate
+    milestone 3."""
+    filters = PostingFilter(judged=False, prefilter_status="passed")
     return await list_postings(db, filters, limit=limit, sort_field="first_seen_at", sort_direction=1)

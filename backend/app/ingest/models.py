@@ -57,6 +57,13 @@ class Posting(BaseModel):
     judged: bool = False
     verdict: Optional[str] = None
 
+    # Prefilter lifecycle fields — milestone 3 (PLAN.md §4). Insert-only in
+    # store.py, same as judged/verdict: a re-ingest must never un-classify
+    # an already-prefiltered posting back to prefiltered=False.
+    prefiltered: bool = False
+    prefilter_status: Optional[str] = None
+    prefilter_reason: Optional[str] = None
+
     model_config = ConfigDict(populate_by_name=True)
 
 

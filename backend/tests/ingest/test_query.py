@@ -67,6 +67,13 @@ async def test_next_postings_is_unjudged_ascending_fifo():
     result = await next_postings(db, limit=DEFAULT_NEXT_LIMIT)
 
     assert result == docs
-    db.postings.find.assert_called_once_with({"judged": False, "duplicate_of": None})
+    db.postings.find.assert_called_once_with(
+        {"judged": False, "duplicate_of": None, "prefilter_status": "passed"}
+    )
     cursor.sort.assert_called_once_with("first_seen_at", 1)
     cursor.limit.assert_called_once_with(DEFAULT_NEXT_LIMIT)
+
+
+def test_next_postings_only_serves_prefilter_passed():
+    query = build_query(PostingFilter(judged=False, prefilter_status="passed"))
+    assert query["prefilter_status"] == "passed"

@@ -18,8 +18,12 @@ from app.ingest.models import Posting
 log = logging.getLogger(__name__)
 
 # Fields set only when a document is first created — re-ingesting an
-# already-judged posting must never clobber the verdict milestone 2 writes.
-_INSERT_ONLY_DEFAULTS = {"judged": False, "verdict": None}
+# already-judged posting must never clobber the verdict milestone 2 writes,
+# and (milestone 3) must never un-classify an already-prefiltered posting.
+_INSERT_ONLY_DEFAULTS = {
+    "judged": False, "verdict": None,
+    "prefiltered": False, "prefilter_status": None, "prefilter_reason": None,
+}
 
 
 @dataclass
@@ -44,9 +48,10 @@ async def upsert_postings(db: AsyncIOMotorDatabase, postings: list[Posting], run
     for posting in postings:
         doc = posting.model_dump(by_alias=True, exclude={"first_seen_at", "last_seen_at"})
         doc_id = doc.pop("_id")
-        # Never let a re-ingest touch judging state — that's jobctl judge's job.
-        doc.pop("judged", None)
-        doc.pop("verdict", None)
+        # Never let a re-ingest touch judging or prefilter state — those are
+        # jobctl judge's / jobctl prefilter run's job, not ingest's.
+        for field_name in _INSERT_ONLY_DEFAULTS:
+            doc.pop(field_name, None)
 
         update_fields = {k: v for k, v in doc.items() if v is not None or k == "duplicate_of"}
         update_fields["last_seen_at"] = now

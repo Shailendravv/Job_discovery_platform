@@ -1,0 +1,75 @@
+# backend/config/prefilter.yml — PLAN.md §4 "Phase 3 — prefilter before the
+# agent sees anything" (milestone 3).
+#
+# *** SAMPLE VALUES — TUNE THESE TO YOUR OWN RESUME/PREFERENCES ***
+# This ships as a documented seed, the same way milestone 1's
+# ats_companies.yml started as a seed list of companies rather than your
+# final registry. The mechanism is proven by backend/tests/ingest/
+# test_prefilter.py against synthetic postings; the >=80%-dropped
+# acceptance criterion (PLAN.md §9) only means something against the live
+# registry once these values reflect your real target seniority, allowed
+# locations, years-of-experience ceiling, disqualifiers, and core skills.
+# After editing, run `jobctl prefilter run --json` to see it applied.
+
+hard_filters:
+  # Regex, case-insensitive, matched against the posting title. Any match
+  # rejects the posting outright — start narrow, widen if step 1 is
+  # dropping things you would have wanted (PLAN.md §4).
+  title_blocklist:
+    - "\\bstaff\\b"
+    - "\\bprincipal\\b"
+    - "\\bdirector\\b"
+    - "\\bvp\\b"
+    - "\\bhead of\\b"
+
+  # If non-empty, the title must match at least one of these to pass.
+  # Empty (the default) means no allowlist restriction.
+  title_allowlist: []
+
+  # Substring match (case-insensitive) against the posting's location.
+  # A posting passes if its location contains any of these, OR it's
+  # remote and remote_ok is true.
+  allowed_locations:
+    - "remote"
+    - "bangalore"
+    - "bengaluru"
+    - "hyderabad"
+    - "pune"
+    - "india"
+  remote_ok: true
+
+  # Ceiling on years of experience mentioned in the description. A posting
+  # asking for more than this is rejected. Leave unset (null) for no cap.
+  max_years_experience: 3
+
+  # Case-insensitive substring match against title + description. Any hit
+  # rejects the posting — for requirements you flatly cannot meet.
+  disqualifying_keywords:
+    - "security clearance"
+    - "us citizenship required"
+    - "must be authorized to work in the united states without sponsorship"
+
+keyword_floor:
+  # A posting must mention at least `min_matches` of these (case-insensitive,
+  # counted across title + description) to clear this stage.
+  skills:
+    - "python"
+    - "fastapi"
+    - "react"
+    - "typescript"
+    - "mongodb"
+    - "docker"
+    - "aws"
+    - "sql"
+    - "node"
+    - "django"
+  min_matches: 2
+
+embedding:
+  # Off by default this milestone — see backend/docs/prefilter.md "Open
+  # Issues". Enabling this without sentence-transformers installed and a
+  # real resume at resume_path is harmless (the stage degrades to a no-op
+  # pass, logged once) but won't actually filter anything.
+  enabled: false
+  resume_path: "profile/resume.md"
+  threshold: 0.35

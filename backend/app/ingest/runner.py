@@ -21,6 +21,8 @@ from app.agents.ats_providers._http import HostThrottle, reset_host_throttle, se
 from app.ingest.dedupe import DedupeIndex, apply_dedupe
 from app.ingest.models import Posting
 from app.ingest.normalize import normalize_posting
+from app.ingest.prefilter import CONFIG_PATH as PREFILTER_CONFIG_PATH
+from app.ingest.prefilter import load_prefilter_config, run_prefilter
 from app.ingest.registry import CONFIG_PATH, Source, load_and_resolve_sources
 from app.ingest.store import StoreResult, upsert_postings
 
@@ -58,6 +60,7 @@ class IngestRunResult:
     dry_run: bool = False
     write_errors: list[dict] = field(default_factory=list)
     outcomes: list[SourceOutcome] = field(default_factory=list)
+    prefilter: Optional[dict] = None  # milestone 3 stage counts, None on dry-run
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -170,6 +173,21 @@ async def run_ingest(
             result.updated = store_result.updated
             result.write_errors = store_result.write_errors
 
+    if not dry_run:
+        # PLAN.md §4 (milestone 3): classify everything not yet prefiltered
+        # after every ingest, not just what this run fetched -- so a run
+        # that itself finds 0 new postings still works through any backlog
+        # (e.g. the first run after the prefilter fields were migrated in).
+        try:
+            prefilter_config = load_prefilter_config(PREFILTER_CONFIG_PATH)
+            prefilter_result = await run_prefilter(db, prefilter_config)
+            result.prefilter = prefilter_result.to_dict()
+        except FileNotFoundError:
+            log.warning(
+                "[ingest] prefilter config not found at %s -- skipping prefilter this run",
+                PREFILTER_CONFIG_PATH,
+            )
+
     finished_at = datetime.now(timezone.utc)
     result.finished_at = finished_at.isoformat()
 
@@ -189,6 +207,7 @@ async def run_ingest(
             "updated": result.updated,
             "errors": [asdict(o) for o in result.outcomes if o.status == "error"],
             "write_errors": result.write_errors,
+            "prefilter": result.prefilter,
         })
 
     return result

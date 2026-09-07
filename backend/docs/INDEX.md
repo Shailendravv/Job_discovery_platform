@@ -11,6 +11,7 @@ Keep this list alphabetical by file name. Every doc file in this directory must 
 | jobs.md | backend/app/api/v1/jobs.py, backend/app/services/db_service.py, backend/app/models/job.py | active | 2026-06-28 |
 | judging.md | backend/app/ingest/query.py, backend/app/ingest/ids.py, backend/app/ingest/format.py, backend/app/ingest/verdicts.py, backend/migrations/013_add_verdicts_collection.py, backend/jobctl/__main__.py | active | 2026-09-07 |
 | payments-refunds.md | backend/payments/refunds/ | active | 2026-06-01 |
+| prefilter.md | backend/app/ingest/prefilter.py, backend/config/prefilter.yml, backend/migrations/014_add_prefilter_fields.py, backend/app/ingest/runner.py, backend/app/ingest/query.py, backend/app/ingest/store.py, backend/app/ingest/models.py | active | 2026-09-07 |
 | resume.md | backend/app/api/v1/resumes.py, backend/app/models/resume.py, backend/app/services/db_service.py | active | 2026-06-28 |
 | tailor_structured.md | backend/app/api/v1/resumes.py, backend/app/services/structured_tailor.py, backend/app/services/pii_service.py, backend/app/services/llm/, backend/app/services/cover_letter.py, backend/app/services/html_service.py, backend/app/services/cloudinary_service.py, backend/app/services/db_service.py, backend/app/models/resume.py | active | 2026-06-28 |
 

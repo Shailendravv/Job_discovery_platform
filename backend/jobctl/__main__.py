@@ -27,6 +27,8 @@ from pydantic import ValidationError
 from app.ingest.doctor import run_doctor, summarize
 from app.ingest.format import render_posting_md, render_posting_summary
 from app.ingest.ids import assign_short_ids, resolve_posting_id, short_id
+from app.ingest.prefilter import CONFIG_PATH as PREFILTER_CONFIG_PATH
+from app.ingest.prefilter import load_prefilter_config, run_prefilter
 from app.ingest.query import DEFAULT_LIST_LIMIT, DEFAULT_NEXT_LIMIT, PostingFilter, list_postings, next_postings
 from app.ingest.registry import load_and_resolve_sources
 from app.ingest.runner import run_ingest
@@ -39,6 +41,8 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %
 app = typer.Typer(add_completion=False, help="ATS ingestion + judging pipeline CLI (PLAN.md).")
 sources_app = typer.Typer(add_completion=False, help="Inspect the ATS company registry.")
 app.add_typer(sources_app, name="sources")
+prefilter_app = typer.Typer(add_completion=False, help="Rule-based prefilter between ingest and next (PLAN.md §4).")
+app.add_typer(prefilter_app, name="prefilter")
 
 
 def _print(data: dict, as_json: bool) -> None:
@@ -147,6 +151,81 @@ def sources_doctor(json_out: bool = typer.Option(False, "--json")) -> None:
     typer.echo(f"\nsummary: {summary}")
 
 
+@prefilter_app.command("run")
+def prefilter_run(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Compute stage counts without writing anything."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
+) -> None:
+    """Classify every posting not yet prefiltered against
+    ``config/prefilter.yml`` — hard filters, then keyword floor (PLAN.md
+    §4). Re-runnable after editing the config; already-classified postings
+    are left alone. ``jobctl next`` only ever serves postings this leaves
+    with ``prefilter_status: passed``."""
+    try:
+        config = load_prefilter_config(PREFILTER_CONFIG_PATH)
+    except FileNotFoundError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    async def _run():
+        async with db_session() as db:
+            return await run_prefilter(db, config, dry_run=dry_run)
+
+    result = asyncio.run(_run())
+    data = result.to_dict()
+
+    if json_out:
+        typer.echo(jsonlib.dumps(data, indent=2, default=str))
+        return
+
+    typer.echo(f"input: {data['input']}{'  (dry-run)' if dry_run else ''}")
+    typer.echo(f"rejected: {data['hard_filter_rejected']} hard filter, "
+               f"{data['keyword_floor_rejected']} keyword floor, {data['embedding_rejected']} embedding "
+               f"({data['embedding_skipped']} skipped, stage disabled)")
+    typer.echo(f"passed: {data['passed']}")
+    if data["input"]:
+        rejected = data["input"] - data["passed"]
+        typer.echo(f"dropped: {rejected / data['input']:.0%}")
+
+
+@prefilter_app.command("show")
+def prefilter_show(
+    id: str = typer.Argument(..., help="Full posting id or an unambiguous prefix."),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Explain why one posting passed or was rejected by the prefilter."""
+
+    async def _run() -> tuple[Optional[dict], Optional[str]]:
+        async with db_session() as db:
+            return await resolve_posting_id(db, id)
+
+    doc, error = asyncio.run(_run())
+    if error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1)
+
+    data = {
+        "id": short_id(doc["_id"]),
+        "title": doc.get("title"),
+        "company_name": doc.get("company_name"),
+        "prefiltered": doc.get("prefiltered", False),
+        "prefilter_status": doc.get("prefilter_status"),
+        "prefilter_reason": doc.get("prefilter_reason"),
+    }
+
+    if json_out:
+        typer.echo(jsonlib.dumps(data, indent=2, default=str))
+        return
+
+    typer.echo(f"[{data['id']}] {data['title']} — {data['company_name']}")
+    if not data["prefiltered"]:
+        typer.echo("prefilter: not yet classified (run `jobctl prefilter run`)")
+    else:
+        typer.echo(f"prefilter: {data['prefilter_status']}")
+        if data["prefilter_reason"]:
+            typer.echo(f"reason: {data['prefilter_reason']}")
+
+
 @app.command()
 def stats(json_out: bool = typer.Option(False, "--json")) -> None:
     """Posting counts overall, per-provider, and new in the last 24h."""
@@ -165,6 +244,7 @@ def stats(json_out: bool = typer.Option(False, "--json")) -> None:
                 per_provider[doc["_id"] or "unknown"] = doc["count"]
 
             last_run = await db.ingest_runs.find_one(sort=[("started_at", -1)])
+            last_prefilter_run = await db.prefilter_runs.find_one(sort=[("run_at", -1)])
 
             return {
                 "total_postings": total,
@@ -177,6 +257,17 @@ def stats(json_out: bool = typer.Option(False, "--json")) -> None:
                     "inserted": last_run.get("inserted"),
                     "updated": last_run.get("updated"),
                 } if last_run else None,
+                "prefilter": {
+                    "unclassified": await db.postings.count_documents({"prefiltered": False}),
+                    "last_run": {
+                        "run_at": last_prefilter_run.get("run_at"),
+                        "input": last_prefilter_run.get("input"),
+                        "passed": last_prefilter_run.get("passed"),
+                        "hard_filter_rejected": last_prefilter_run.get("hard_filter_rejected"),
+                        "keyword_floor_rejected": last_prefilter_run.get("keyword_floor_rejected"),
+                        "embedding_rejected": last_prefilter_run.get("embedding_rejected"),
+                    } if last_prefilter_run else None,
+                },
             }
 
     data = asyncio.run(_run())
