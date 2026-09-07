@@ -1,20 +1,52 @@
-export interface Job {
-  id?: string;
+// ── Posting types (backend: app/ingest/models.py Posting) ──
+//
+// Postings come from the ATS ingest pipeline (jobctl ingest / POST
+// /api/v1/postings/ingest), not a live per-search scrape — see
+// AGENTS.md. GET /api/v1/postings returns up to 200 latest, newest
+// first, already deduplicated and prefiltered.
+
+export interface Posting {
+  id: string;
+  provider: string;
+  org: string;
+  company_name: string;
+
   title: string;
-  company: string;
+  title_normalized: string;
   location?: string | null;
-  description: string;
-  url?: string | null;
-  apply_url?: string | null;
-  skills: string[];
-  job_type: string;
-  posted_date?: string | null;
+  location_normalized: string;
+  remote_flag?: boolean | null;
+  employment_type?: string | null;
+
+  description_text: string;
   salary?: string | null;
-  source?: string | null;
-  created_at?: string;
-  updated_at?: string;
+
+  url: string;
+  apply_url?: string | null;
+
+  posted_at?: string | null;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+
+  duplicate_of?: string | null;
+  tags: string[];
+
+  judged: boolean;
+  verdict?: string | null;
+
+  prefiltered: boolean;
+  prefilter_status?: string | null;
+  prefilter_reason?: string | null;
 }
 
+export interface PostingListResponse {
+  postings: Posting[];
+  total: number;
+}
+
+// Client-side pagination over the fetched postings — see AppContext.tsx.
+// GET /api/v1/postings itself has no page/skip param (it returns up to
+// `limit` latest postings in one shot).
 export interface PaginationMeta {
   page: number;
   limit: number;
@@ -22,30 +54,11 @@ export interface PaginationMeta {
   pages: number;
 }
 
-export interface JobListResponse {
-  jobs: Job[];
-  pagination: PaginationMeta;
-}
-
-export interface JobFilterParams {
-  page?: number;
+export interface PostingFilterParams {
   limit?: number;
-  source?: string | null;
-  job_type?: string | null;
-  location?: string | null;
-  q?: string | null;
-  sort_by?: "created_at" | "updated_at" | "title" | "company" | "score";
-  sort_order?: "asc" | "desc";
-}
-
-export interface JobSearchRequest {
-  user_input: string;
-  location?: string;
-}
-
-export interface JobSearchResponse {
-  jobs: Job[];
-  saved: number;
+  since_days?: number;
+  provider?: string | null;
+  org?: string | null;
 }
 
 export interface ActiveResumeInfo {
@@ -70,27 +83,28 @@ export interface TailoringStatus {
   download_urls?: TailoringDownloadUrls | null;
 }
 
-export interface JobDetail {
-  id: string;
-  title: string;
-  company: string;
-  location: string | null;
-  description: string;
-  url: string | null;
-  apply_url: string | null;
-  skills: string[];
-  job_type: string;
-  posted_date: string | null;
-  salary: string | null;
-  source: string | null;
-  experience: string | null;
-  requirements: string[];
-  ref_id: string | null;
-  created_at: string | null;
-  updated_at: string | null;
-  // Resume lifecycle fields
+export interface PostingDetail extends Posting {
   active_resume?: ActiveResumeInfo | null;
   tailoring_status?: TailoringStatus | null;
+}
+
+export interface IngestTriggerResponse {
+  run_id: string;
+  status: string;
+}
+
+export interface ShortlistEntry {
+  id: string;
+  verdict: string;
+  score: number;
+  reasons: string[];
+  concerns: string[];
+  judged_at?: string | null;
+  posting: Posting;
+}
+
+export interface ShortlistResponse {
+  entries: ShortlistEntry[];
 }
 
 // ── Resume Upload Types ──
@@ -147,6 +161,7 @@ export interface ResumeTailorResponse {
   cover_letter: string;
   download_urls: DownloadUrls;
   // ATS optimisation metadata
+  ats_keywords_matched?: string[];
   keyword_coverage_pct?: number;
   paper_format?: string;
   jd_keywords?: string[];

@@ -1,6 +1,8 @@
 """
 Cover letter generation service.
-Uses Groq to write a professional cover letter based on resume and job description.
+Uses the configured LLM chain (Claude Haiku, falling back to Ollama —
+see app/services/llm/) to write a professional cover letter based on
+resume and job description.
 """
 
 import logging

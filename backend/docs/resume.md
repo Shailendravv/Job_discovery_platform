@@ -45,7 +45,7 @@ Allows users to upload a resume (PDF/DOCX), have it parsed by an LLM into struct
   11. Save tailor session to MongoDB `tailor_sessions` collection.
   12. If file generation/upload fails, return response with no download URLs (not an error).
 - **Outputs (200):** `StructuredTailorResponse` or `StructuredTailorErrorResponse` (both are 200; errors use the error response model).
-- **Validation:** `resume_id` and `job_id` must be valid MongoDB ObjectId strings (24 hex chars) — if not, `get_resume_by_id`/`get_job_by_id` return `None` and trigger 404.
+- **Validation:** `resume_id` must be a valid MongoDB ObjectId string (24 hex chars) — `get_resume_by_id` returns `None` and triggers 404 otherwise. `job_id` is a `postings` document `_id` (sha256 hex, from `app/ingest/models.py::posting_id`) — the handler does an inline `db.postings.find_one({"_id": job_id})` and 404s if not found.
 
 ### `POST /download-from-url` — Proxy File Download
 - **Inputs:** `DownloadFromUrlRequest { url: string }` — a Cloudinary delivery URL.

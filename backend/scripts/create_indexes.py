@@ -22,33 +22,14 @@ except ImportError:
 
 # Index definitions - each tuple is (index_spec, index_name, options)
 INDEXES = {
-    "jobs": [
-        # Compound unique for deduplication
-        ([("company", 1), ("title", 1), ("location", 1)], "idx_job_dedup_unique",
-         {"unique": True, "partialFilterExpression": {"is_deleted": {"$exists": False}}}),
-
-        # Text search
-        ([
-            ("title", "text"), ("company", "text"),
-            ("description", "text"), ("skills", "text")
-         ], "idx_job_text_search", {
-             "weights": {"title": 10, "company": 3, "skills": 5, "description": 1},
-             "default_language": "english"
-         }),
-
-        ([("source", 1), ("created_at", -1)], "idx_job_source_created", {}),
-        ([("location", 1), ("job_type", 1), ("created_at", -1)], "idx_job_location_type", {}),
-        ([("job_type", 1), ("posted_date_parsed", -1)], "idx_job_type_posted", {}),
-        ([("skills", 1)], "idx_job_skills", {"background": True}),
-        ([("match_score", -1), ("created_at", -1)], "idx_job_match_score", {}),
-        ([("user_id", 1), ("is_saved", 1)], "idx_job_user_saved", {}),
-        ([("company", 1), ("created_at", -1)], "idx_job_company_created", {}),
-        ([("dedup_hash", 1)], "idx_job_dedup_hash",
-         {"unique": True, "partialFilterExpression": {"dedup_hash": {"$exists": True}}}),
-
-        # TTL index (90 days)
-        ([("created_at", 1)], "idx_job_created_ttl", {"expireAfterSeconds": 90 * 24 * 60 * 60}),
-    ],
+    # NOTE: the legacy "jobs" collection was retired (migration
+    # 015_retire_jobs_collection.py) — job/posting data now lives in
+    # "postings" and its indexes come from migrations 012 and 015
+    # (idx_postings_first_seen_at, idx_postings_dedupe_key,
+    # idx_postings_provider_org, idx_postings_judged_first_seen,
+    # idx_postings_prefiltered_first_seen, idx_postings_posted_at).
+    # Deliberately not listed here — calling create_index on a dropped
+    # collection name would silently recreate it.
 
     "resumes": [
         ([("resume_id", 1)], "idx_resume_resume_id", {"unique": True}),

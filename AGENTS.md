@@ -2,29 +2,27 @@
 
 ## Quick start
 ```bash
-bash start.sh                      # one-command: Docker → Ollama → MCP → backend → frontend
+bash start.sh                      # one-command: venv/deps → migrations → Ollama → backend → frontend
 ```
 Or individually:
 ```bash
-cd backend && python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt
+cd backend && python -m venv .venv && .venv\Scripts\activate && pip install -r requirements.txt && pip install -e .
 cd backend && python scripts/run_migrations.py
 cd backend && uvicorn app.main:app --reload --port 8000    # API on :8000
 cd frontend && npm install && npm run dev                   # UI on :5173
 ```
 
 ## Architecture
-- **Backend:** FastAPI + Motor (async MongoDB) + LangGraph agents. Entry: `backend/app/main.py:15`
+- **Backend:** FastAPI + Motor (async MongoDB). Entry: `backend/app/main.py`
+- **Job data:** the ATS ingest pipeline (`backend/app/ingest/`, driven by `jobctl ingest` or `POST /api/v1/postings/ingest`) — fetches from 7 ATS connectors (`backend/app/agents/ats_providers/`) for the companies in `config/ats_companies.yml`, normalizes, dedupes, and prefilters into the `postings` collection. There is no live-scrape search path; the frontend only ever reads what's already in the database.
 - **Frontend:** React 19 + TypeScript + Vite 8 + Tailwind CSS v4. Entry: `frontend/src/main.tsx`
-- **MCP servers:** Two standalone Python processes for job search (:8001) and browsing (:8002)
-- **Infra (Docker):** SearXNG (:8888), Camofox browser (:9500) via `backend/services/docker-compose.yml`
-- **LLM:** Pluggable via `LLM_PROVIDER` env var — ollama, groq, openrouter, cerebras, sambanova, nvidia, multi (fallback chain)
+- **LLM:** Fixed two-step chain — Claude (`claude-haiku-4-5`, via `ANTHROPIC_API_KEY`) first, falling back to local Ollama (`app/services/llm/claude_fallback_provider.py`) if the Claude API call fails. Used for resume tailoring / cover letters, not for discovery. `LLM_PROVIDER` env var: `claude` (default, the fallback chain), `claude-only`, or `ollama`.
+- **Judging:** not an API call — `jobctl next` hands unjudged postings to a Claude Code session (this CLI), which writes `verdicts.json` back via `jobctl judge --apply`. See "Judging pipeline" below.
 - **Config:** `backend/app/core/config.py` — Pydantic Settings from `.env` or OS env vars
 
 ## Key commands
 | Command | Location | Notes |
 |---|---|---|
-| `python -m app.agents.nodes.job_mcp_server` | backend/ | MCP Search server (port 8001) |
-| `python -m app.agents.nodes.job_mcp_browse_server` | backend/ | MCP Browse server (port 8002) |
 | `uvicorn app.main:app --reload --port 8000` | backend/ | Backend API |
 | `npm run dev` | frontend/ | Vite dev server |
 | `npm run build` | frontend/ | `tsc -b && vite build` |
@@ -32,6 +30,7 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 | `pytest tests/` | backend/ | Unit tests |
 | `pip install -e .` | backend/ | Installs the `jobctl` CLI (ATS ingestion — see `backend/docs/ingest.md`) |
 | `jobctl ingest [--source X] [--org X] [--dry-run]` | backend/ | Fetch, normalize, dedupe, upsert postings from `config/ats_companies.yml`; runs the prefilter automatically afterward |
+| `POST /api/v1/postings/ingest` | backend API | Same as `jobctl ingest`, triggered from the frontend's Discovery page; runs as a background task and returns a run id immediately |
 | `jobctl sources doctor` | backend/ | Live-probe every registry entry; reports 0-job/errored/dead tokens |
 | `jobctl prefilter run \| show <id>` | backend/ | Rule-based reject before judging (`config/prefilter.yml`) — see `backend/docs/prefilter.md` |
 | `jobctl profile add <file> --as resume` | backend/ | Extract text (no LLM) into `profile/resume.md` |
@@ -41,10 +40,8 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 | `jobctl stats` | backend/ | Posting counts overall, per-provider, new in last 24h |
 | `/nightly` | repo root | Runs the full loop unaided — `.claude/commands/nightly.md` |
 | `/calibrate` | repo root | Review sampled verdicts, update `profile/calibration.md` — `.claude/commands/calibrate.md` |
-| `python test/test_integration.py` | backend/ | Integration tests |
-| `python scripts/run_migrations.py` | backend/ | MongoDB schema migrations |
-| `python scripts/create_indexes.py` | backend/ | DB index creation |
-| `playwright install` | backend/ | Required for browser scraping |
+| `python scripts/run_migrations.py [--yes]` | backend/ | MongoDB schema migrations; `--yes` skips the confirmation prompt (used by `start.sh`) |
+| `playwright install` | backend/ | Needed for the resume HTML→PDF renderer (`app/services/html_service.py`), unrelated to job discovery |
 
 ## Judging pipeline (jobctl)
 
@@ -163,21 +160,19 @@ this), `backend/docs/ingest.md` (ATS connectors, source registry).
 - [ ] `INDEX.md` updated if doc set changed
 
 ## Testing quirks
-- Only `tests/test_db_service.py` has unit tests (4 async tests mocking MongoDB)
-- Integration tests in `backend/test/test_integration.py` (standalone script, not pytest)
+- `tests/ingest/` has the real coverage — 141 tests for the ATS providers, normalize/dedupe/store, prefilter, and the ingest runner
 - Resume endpoints have no dedicated tests
 
 ## Secrets & env vars
-- `start.sh` exports non-secret defaults (URLs, toggles, model names) — no API keys are hardcoded
+- Only one secret matters: `ANTHROPIC_API_KEY`. Without it the LLM chain falls back to Ollama automatically (no error) — see `app/services/llm/claude_fallback_provider.py`.
+- `start.sh` only sets `MONGODB_URI`/`MONGODB_DB` defaults itself — everything else the app needs is a pydantic-settings default in `backend/app/core/config.py`, read from `backend/.env`. **`backend/.env` is the source of truth for app settings**; `start.sh` no longer exports anything that would override it.
 - Secrets are loaded dynamically, never stored in workspace files:
   1. Already-set terminal env vars (highest priority)
   2. `~/.jobsphere/secrets.env` (outside workspace — invisible to assistants)
-  3. Interactive `read -s` prompt at startup if still missing
-- To pre-configure secrets without prompts: `mkdir -p ~/.jobsphere` and create `secrets.env` with `export KEY=value` lines
-- Backend `.env` file holds only non-secret defaults, consumed by Pydantic `Settings` at import time
+  3. Interactive `read -s` prompt at startup if still missing (skipped non-interactively — falls back to Ollama)
+- To pre-configure secrets without prompts: `mkdir -p ~/.jobsphere` and create `secrets.env` with `export ANTHROPIC_API_KEY=...`
 - Frontend needs `VITE_API_URL=http://localhost:8000` in `frontend/.env`
-- `.gitignore` now blocks `.env`, `.env.*`, and `secrets*` patterns (but allows `.env.example`)
-- MCP servers must be running before backend starts (backend depends on them)
+- `.gitignore` blocks `.env`, `.env.*`, and `secrets*` patterns (but allows `.env.example`)
 
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph

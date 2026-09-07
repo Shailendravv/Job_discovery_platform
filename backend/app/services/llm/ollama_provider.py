@@ -33,8 +33,8 @@ class OllamaProvider(LLMProvider):
         return "ollama"
 
     def __init__(self) -> None:
-        self.base_url = (settings.OLLAMA_BASE_URL or settings.Ollama).rstrip("/")
-        self.model = settings.OLLAMA_MODEL or settings.MODEL_NAME
+        self.base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+        self.model = settings.OLLAMA_MODEL
         self.temperature = settings.MODEL_TEMPERATURE
         log.info(
             "[llm:ollama] initialized — url=%s model=%s temperature=%s",

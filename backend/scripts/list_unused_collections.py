@@ -31,12 +31,19 @@ UNUSED_COLLECTIONS = [
     "change_stream_checkpoints",
     "change_stream_configs",
     "jobs_company_summary",
+    # Retired by migration 015_retire_jobs_collection.py — replaced by
+    # "postings" (app/ingest/models.py Posting), a different schema.
+    "jobs",
 ]
 
 # Collections that are actively used
 USED_COLLECTIONS = [
-    "jobs",
+    "postings",
+    "verdicts",
+    "prefilter_runs",
+    "ingest_runs",
     "resumes",
+    "tailor_sessions",
     "_migrations",
 ]
 

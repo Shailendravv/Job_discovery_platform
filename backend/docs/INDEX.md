@@ -8,7 +8,6 @@ Keep this list alphabetical by file name. Every doc file in this directory must 
 |---|---|---|---|---|
 | ats_optimization.md | backend/app/services/ats_keywords.py, backend/app/services/ats_scoring.py, backend/app/services/ats_location.py, backend/app/services/html_renderer.py, backend/templates/cv-template.html, backend/static/fonts/ | active | 2026-07-01 |
 | ingest.md | backend/app/ingest/, backend/jobctl/, backend/config/ats_companies.yml, backend/migrations/012_add_postings_collection.py, backend/app/agents/ats_providers/ | active | 2026-09-07 |
-| jobs.md | backend/app/api/v1/jobs.py, backend/app/services/db_service.py, backend/app/models/job.py | active | 2026-06-28 |
 | judging.md | backend/app/ingest/query.py, backend/app/ingest/ids.py, backend/app/ingest/format.py, backend/app/ingest/verdicts.py, backend/app/ingest/profile_store.py, backend/migrations/013_add_verdicts_collection.py, backend/jobctl/__main__.py, .claude/commands/nightly.md, .claude/commands/calibrate.md | active | 2026-09-07 |
 | payments-refunds.md | backend/payments/refunds/ | active | 2026-06-01 |
 | prefilter.md | backend/app/ingest/prefilter.py, backend/config/prefilter.yml, backend/migrations/014_add_prefilter_fields.py, backend/app/ingest/runner.py, backend/app/ingest/query.py, backend/app/ingest/store.py, backend/app/ingest/models.py | active | 2026-09-07 |

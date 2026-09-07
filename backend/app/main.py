@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import connect_db, close_db
-from app.api.v1 import jobs, resumes
+from app.api.v1 import postings, resumes
 from app.core.config import settings
 from app.services.cloudinary_service import configure_cloudinary
 
@@ -28,14 +28,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(jobs.router, prefix="/api/v1/jobs", tags=["jobs"])
+app.include_router(postings.router, prefix="/api/v1/postings", tags=["postings"])
 app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
 
 
 @app.on_event("startup")
 async def startup():
     await connect_db()
-    from app.core.config import settings
 
     log = logging.getLogger("startup")
 
@@ -55,38 +54,13 @@ async def startup():
             "  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)"
         )
 
-    # Log LLM Provider Config
+    # Log LLM Provider Config — fixed Claude (Haiku) -> Ollama chain
     log.info("=== LLM Provider Config ===")
-    provider = settings.LLM_PROVIDER.lower().strip()
-    log.info("  LLM_PROVIDER               : %s", provider)
-    if provider == "ollama":
-        base_url = settings.OLLAMA_BASE_URL or settings.Ollama
-        model = settings.OLLAMA_MODEL or settings.MODEL_NAME
-        log.info("  OLLAMA_BASE_URL            : %s", base_url)
-        log.info("  OLLAMA_MODEL               : %s", model)
-    elif provider == "openrouter":
-        if settings.OPENROUTER_API_KEY:
-            log.info("  OPENROUTER                 : configured")
-        else:
-            log.warning("  OPENROUTER_API_KEY        : not configured")
-        model = settings.OPENROUTER_MODEL or "qwen/qwen3-coder:free"
-        log.info("  OPENROUTER_MODEL           : %s", model)
-        log.info("  OPENROUTER_FALLBACK_CHAIN  : 12 models configured")
-    log.info("  MODEL_TEMPERATURE          : %s", settings.MODEL_TEMPERATURE)
+    log.info("  LLM_PROVIDER               : %s", settings.LLM_PROVIDER)
+    log.info("  CLAUDE_MODEL                : %s", settings.CLAUDE_MODEL)
+    log.info("  OLLAMA_BASE_URL            : %s (fallback)", settings.OLLAMA_BASE_URL)
+    log.info("  OLLAMA_MODEL               : %s", settings.OLLAMA_MODEL)
     log.info("============================")
-
-    # Log legacy Groq status (for reference)
-    if settings.GROQ_API_KEY:
-        log.info(
-            "  GROQ (legacy)               : configured (model=%s)", settings.GROQ_MODEL
-        )
-
-    log.info("=== Search Provider Config ===")
-    log.info("  SEARXNG_ENABLED            : %r", settings.SEARXNG_ENABLED)
-    log.info("  LINKEDIN_GUEST_API_ENABLED : %r", settings.LINKEDIN_GUEST_API_ENABLED)
-    log.info("  LINKEDIN_GUEST_API_LOCATION: %r", settings.LINKEDIN_GUEST_API_LOCATION)
-    log.info("  ATS_ENABLED                : %r", settings.ATS_ENABLED)
-    log.info("==============================")
 
 
 @app.on_event("shutdown")

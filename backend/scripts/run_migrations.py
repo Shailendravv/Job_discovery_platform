@@ -343,8 +343,11 @@ class MigrationRunner:
             except:
                 print(f"  {coll:<20} {'N/A':>8}")
 
-    async def run_all(self) -> bool:
-        """Run all pending migrations in order."""
+    async def run_all(self, auto_confirm: bool = False) -> bool:
+        """Run all pending migrations in order.
+
+        auto_confirm skips the interactive confirmation prompts (used by
+        start.sh so first-run setup doesn't block on stdin)."""
         applied = await self.get_applied_migrations()
         applied_names = {a["migration"] for a in applied}
 
@@ -364,10 +367,13 @@ class MigrationRunner:
         for mig in pending:
             print(f"  - {mig.name} ({mig.type})")
 
-        response = input(f"\nApply {len(pending)} migration(s)? (yes/no): ")
-        if response.lower() != "yes":
-            print("Cancelled")
-            return False
+        if auto_confirm:
+            print(f"\nApplying {len(pending)} migration(s) (--yes) ...")
+        else:
+            response = input(f"\nApply {len(pending)} migration(s)? (yes/no): ")
+            if response.lower() != "yes":
+                print("Cancelled")
+                return False
 
         # Apply in order
         all_success = True
@@ -376,12 +382,16 @@ class MigrationRunner:
                 success = await self.apply_migration(mig)
                 if not success:
                     all_success = False
+                    if auto_confirm:
+                        break
                     response = input("Continue with next migration? (yes/no): ")
                     if response.lower() != "yes":
                         break
             except Exception as e:
                 print(f"\n✗ Error applying {mig.name}: {e}")
                 all_success = False
+                if auto_confirm:
+                    break
                 response = input("Continue? (yes/no): ")
                 if response.lower() != "yes":
                     break
@@ -407,6 +417,11 @@ async def main():
     parser.add_argument(
         "--rollback", action="store_true", help="Rollback all migrations"
     )
+    parser.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Apply pending migrations without the interactive confirmation prompt "
+             "(does not affect --rollback, which always confirms)",
+    )
 
     args = parser.parse_args()
 
@@ -430,7 +445,7 @@ async def main():
         elif args.rollback:
             await runner.rollback_all()
         else:
-            await runner.run_all()
+            await runner.run_all(auto_confirm=args.yes)
 
     except KeyboardInterrupt:
         print("\n\nInterrupted")

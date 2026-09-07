@@ -3,6 +3,14 @@
 Test Data Generator for Job Search Backend
 Generates realistic test data for MongoDB collections.
 
+STALE — targets the retired "jobs" collection and the also-already-dropped
+"users"/"applications"/"searchHistory" collections (migration
+015_retire_jobs_collection.py and 006_cleanup_unused_collections.py). Job
+data now lives in "postings" with a different schema (app/ingest/models.py
+Posting) — this script has not been updated for it. Running it as-is will
+resurrect an empty "jobs" collection with legacy-shaped documents that the
+app no longer reads. Fix generate_job()/insert target before using.
+
 Usage:
     python generate_test_data.py --uri "mongodb+srv://..." --db jobapp
     python generate_test_data.py --uri "..." --jobs 1000 --users 50 --applications 200

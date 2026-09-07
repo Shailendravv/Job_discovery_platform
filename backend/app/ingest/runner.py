@@ -123,8 +123,9 @@ async def run_ingest(
     source_filter: Optional[str] = None,
     org_filter: Optional[str] = None,
     dry_run: bool = False,
+    run_id: Optional[str] = None,
 ) -> IngestRunResult:
-    run_id = uuid.uuid4().hex[:12]
+    run_id = run_id or uuid.uuid4().hex[:12]
     started_at = datetime.now(timezone.utc)
     result = IngestRunResult(run_id=run_id, started_at=started_at.isoformat(), dry_run=dry_run)
 

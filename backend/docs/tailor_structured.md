@@ -56,26 +56,28 @@ The endpoint takes a previously uploaded resume and a saved job posting, strips 
 | `backend/app/services/ats_scoring.py` | Post-LLM project ranking, bullet reordering, keyword coverage computation |
 | `backend/app/services/ats_location.py` | Detects letter vs A4 paper format from job location |
 | `backend/app/services/html_renderer.py` | ATS-optimised HTML template renderer (Space Grotesk + DM Sans, competency grid) |
-| `backend/app/services/cover_letter.py` | Generates cover letter via Groq LLM (separate call) |
-| `backend/app/services/db_service.py` | MongoDB CRUD: `get_resume_by_id()`, `get_job_by_id()`, `save_tailor_session()` |
+| `backend/app/services/cover_letter.py` | Generates cover letter via the Claude→Ollama chain (separate call) |
+| `backend/app/services/db_service.py` | MongoDB CRUD: `get_resume_by_id()`, `save_tailor_session()` (job/posting fetch is inline `db.postings.find_one` in `resumes.py`, not in this module) |
 
 ### Layer 4: LLM Provider Chain
+
+**Rewritten** — the 5-provider chain (groq/cerebras/sambanova/nvidia/openrouter)
+below was replaced with a fixed two-step chain: Claude (Haiku) first, local
+Ollama as the fallback. The ASCII diagrams further down this doc (multi-provider
+fallback flow, retry table, env var table) still describe the old chain and
+have not been redrawn — treat them as historical, and read the source files
+below for how the chain actually behaves now.
 
 | File | Role |
 |------|------|
 | `backend/app/services/llm/__init__.py` | Re-exports `get_llm_provider()` |
-| `backend/app/services/llm/factory.py` | Resolves provider name → instance; caches singleton per provider |
-| `backend/app/services/llm/multi_provider.py` | `MultiProvider` — tries providers in chain: groq → cerebras → sambanova → nvidia → openrouter |
-| `backend/app/services/llm/openrouter_provider.py` | `OpenRouterProvider` — calls OpenRouter API; delegates model-level fallback to `FallbackManager` |
-| `backend/app/services/llm/fallback_manager.py` | `FallbackManager` — retries 8+ models with exponential backoff + jitter |
+| `backend/app/services/llm/factory.py` | Resolves provider name → instance; caches singleton per provider. `LLM_PROVIDER=claude` (default) → `ClaudeWithOllamaFallback`; `claude-only` → `ClaudeProvider` alone; `ollama` → `OllamaProvider` alone |
+| `backend/app/services/llm/claude_fallback_provider.py` | `ClaudeWithOllamaFallback` — tries Claude, falls through to Ollama on any failure (including missing `ANTHROPIC_API_KEY`) |
+| `backend/app/services/llm/claude_provider.py` | `ClaudeProvider` — calls the Anthropic Messages API (`claude-haiku-4-5` by default) |
 | `backend/app/services/llm/base.py` | `LLMProvider` abstract base + `LLMResult` data class |
-| `backend/app/services/llm/groq_provider.py` | Groq provider (used by cover_letter.py via legacy path) |
-| `backend/app/services/llm/cerebras_provider.py` | Cerebras provider |
-| `backend/app/services/llm/sambanova_provider.py` | SambaNova provider |
-| `backend/app/services/llm/nvidia_provider.py` | NVIDIA provider |
-| `backend/app/services/llm/ollama_provider.py` | Ollama provider (local, rarely used in production) |
+| `backend/app/services/llm/ollama_provider.py` | Ollama provider (local fallback) |
 | `backend/app/core/llm.py` | Legacy dispatch — `call_llm_async()` used by `resume_parser.py` and `cover_letter.py` |
-| `backend/app/core/config.py` | Settings: API keys, model names, base URLs |
+| `backend/app/core/config.py` | Settings: `LLM_PROVIDER`, `CLAUDE_MODEL`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` |
 
 ### Layer 5: File Generation
 
@@ -89,7 +91,7 @@ The endpoint takes a previously uploaded resume and a saved job posting, strips 
 
 | File | Role |
 |------|------|
-| `backend/app/core/config.py` | All env vars: `LLM_PROVIDER`, `LLM_PROVIDER_CHAIN`, `OPENROUTER_API_KEY`, etc. |
+| `backend/app/core/config.py` | All env vars: `LLM_PROVIDER`, `CLAUDE_MODEL`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `CLOUDINARY_*` |
 
 ### Files NOT Used
 
@@ -107,17 +109,19 @@ The old `backend/app/services/resume_tailor_engine/` directory (`parser.py`, `re
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ STEP 1: Fetch from MongoDB (db_service.py)                       │
+│ STEP 1: Fetch resume + posting (resumes.py + db_service.py)      │
 │                                                                  │
-│ resume = get_resume_by_id(db, resume_id)                         │
+│ resume = get_resume_by_id(db, resume_id)      # db_service.py    │
 │   → Extracts: resume["extracted_text"] (raw text)                │
 │               resume["parsed_data"]  (structured JSON)           │
 │                                                                  │
-│ job = get_job_by_id(db, job_id)                                  │
-│   → Extracts: job["title"], job["description"], job["skills"]    │
+│ posting_doc = db.postings.find_one({"_id": job_id})  # inline    │
+│   → Adapted to: job["title"], job["company"],                    │
+│                 job["description"], job["location"]              │
+│     (Posting field names differ — see app/ingest/models.py)      │
 │                                                                  │
 │ ❌ If resume not found → 404                                     │
-│ ❌ If job not found → 404                                        │
+│ ❌ If posting not found → 404                                    │
 │ ❌ If resume has no extracted_text → StructuredTailorErrorResponse│
 └─────────────────────────┬────────────────────────────────────────┘
                           │
@@ -552,17 +556,14 @@ Priority by section:
 ### Provider Selection
 | Variable | Purpose | Values |
 |----------|---------|--------|
-| `LLM_PROVIDER` | Which provider to use | `"multi"`, `"groq"`, `"openrouter"`, `"ollama"`, etc. |
-| `LLM_PROVIDER_CHAIN` | Fallback chain for `multi` | `"groq,cerebras,sambanova,nvidia,openrouter"` |
+| `LLM_PROVIDER` | Which provider to use | `"claude"` (default — Claude with Ollama fallback), `"claude-only"`, `"ollama"` |
+| `CLAUDE_MODEL` | Claude model id | `"claude-haiku-4-5"` (default) |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | Local fallback | `"http://localhost:11434"` / `"qwen2.5-coder:1.5b"` |
 
 ### API Keys
 | Variable | Provider |
 |----------|----------|
-| `OPENROUTER_API_KEY` | OpenRouter (used by structured_tailor) |
-| `GROQ_API_KEY` | Groq (used by resume_parser + cover_letter) |
-| `CEREBRAS_API_KEY` | Cerebras |
-| `SAMBANOVA_API_KEY` | SambaNova |
-| `NVIDIA_API_KEY` | NVIDIA |
+| `ANTHROPIC_API_KEY` | Claude (used for resume tailoring + cover letters). If unset, the chain falls back to Ollama automatically — see `claude_fallback_provider.py`. |
 
 ### Cloudinary
 | Variable | Purpose |

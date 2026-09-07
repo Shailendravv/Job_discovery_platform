@@ -58,7 +58,7 @@ class TailoredResumeData(BaseModel):
 
 class StructuredTailorRequest(BaseModel):
     resume_id: str = Field(..., description="MongoDB ObjectId of the resume")
-    job_id: str = Field(..., description="MongoDB ObjectId of the job")
+    job_id: str = Field(..., description="Posting _id (sha256 hex) from the postings collection")
 
 
 class StructuredTailorDownloadUrls(BaseModel):

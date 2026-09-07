@@ -933,11 +933,11 @@ async def _try_single_with_retry(
     Try to process the FULL editable payload in a single LLM call.
 
     Strategy:
-      1. First attempt goes through MultiProvider's chain
-         (groq \u2192 cerebras \u2192 sambanova \u2192 nvidia \u2192 openrouter)
+      1. First attempt goes through the Claude \u2192 Ollama fallback chain
+         (app/services/llm/claude_fallback_provider.py)
       2. On rate-limit failure, retry with increasing delays
          (10s, 20s, 30s) \u2014 a brief pause often resolves free-tier caps
-      3. On other failures, the MultiProvider already exhausted all
+      3. On other failures, the chain already exhausted both
          providers \u2014 skip retry and return None for chunking fallback
       4. Returns None if all attempts are exhausted \u2014 chunking kicks in
 
@@ -999,7 +999,7 @@ async def _try_single_with_retry(
             # Only retry on rate-limit errors
             if "rate limit" in result.failure_reason.lower() or "429" in result.failure_reason:
                 continue  # Will sleep and retry on next loop iteration
-            # Other errors: MultiProvider already tried all providers
+            # Other errors: the Claude→Ollama chain already tried both providers
             log.info("Non-rate-limit failure \u2014 skipping retry, falling back to chunking")
             return None
 

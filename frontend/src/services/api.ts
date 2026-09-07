@@ -1,10 +1,10 @@
 import { env } from "@/config/env";
 import type {
-  JobFilterParams,
-  JobListResponse,
-  JobDetail,
-  JobSearchRequest,
-  JobSearchResponse,
+  PostingFilterParams,
+  PostingListResponse,
+  PostingDetail,
+  IngestTriggerResponse,
+  ShortlistResponse,
   ResumeUploadResponse,
   ResumeTailorRequest,
   ResumeTailorResponse,
@@ -67,15 +67,37 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  searchJobs: async (params: JobSearchRequest): Promise<JobSearchResponse> => {
-    return request<JobSearchResponse>("/api/v1/jobs/search", {
-      method: "POST",
-      body: JSON.stringify(params),
-    });
+  // GET /api/v1/postings — up to `limit` latest postings (default 200),
+  // newest first, already deduplicated + prefiltered server-side.
+  getPostings: async (
+    params: PostingFilterParams = {},
+  ): Promise<PostingListResponse> => {
+    const query = new URLSearchParams();
+    if (params.limit !== undefined) query.append("limit", params.limit.toString());
+    if (params.since_days !== undefined)
+      query.append("since_days", params.since_days.toString());
+    if (params.provider) query.append("provider", params.provider);
+    if (params.org) query.append("org", params.org);
+
+    const queryString = query.toString();
+    const endpoint = `/api/v1/postings${queryString ? `?${queryString}` : ""}`;
+    return request<PostingListResponse>(endpoint);
   },
 
-  getJobById: async (jobId: string): Promise<JobDetail> => {
-    return request<JobDetail>(`/api/v1/jobs/jobs/${jobId}`);
+  getPostingById: async (postingId: string): Promise<PostingDetail> => {
+    return request<PostingDetail>(`/api/v1/postings/${postingId}`);
+  },
+
+  getShortlist: async (): Promise<ShortlistResponse> => {
+    return request<ShortlistResponse>("/api/v1/postings/shortlist");
+  },
+
+  // POST /api/v1/postings/ingest — starts a background ATS ingest run
+  // (same work as `jobctl ingest`) and returns immediately with a run id.
+  triggerIngest: async (): Promise<IngestTriggerResponse> => {
+    return request<IngestTriggerResponse>("/api/v1/postings/ingest", {
+      method: "POST",
+    });
   },
 
   uploadResume: async (file: File): Promise<ResumeUploadResponse> => {
@@ -154,23 +176,5 @@ export const api = {
 
     const blob = await response.blob();
     return { blob, filename };
-  },
-
-  getJobs: async (params: JobFilterParams): Promise<JobListResponse> => {
-    const query = new URLSearchParams();
-
-    if (params.page !== undefined) query.append("page", params.page.toString());
-    if (params.limit !== undefined)
-      query.append("limit", params.limit.toString());
-    if (params.source) query.append("source", params.source);
-    if (params.job_type) query.append("job_type", params.job_type);
-    if (params.location) query.append("location", params.location);
-    if (params.q) query.append("q", params.q);
-    if (params.sort_by) query.append("sort_by", params.sort_by);
-    if (params.sort_order) query.append("sort_order", params.sort_order);
-
-    const queryString = query.toString();
-    const endpoint = `/api/v1/jobs/jobs${queryString ? `?${queryString}` : ""}`;
-    return request<JobListResponse>(endpoint);
   },
 };

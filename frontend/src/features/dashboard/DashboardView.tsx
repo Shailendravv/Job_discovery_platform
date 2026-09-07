@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
-import type { Job } from "@/types";
+import type { Posting } from "@/types";
 import {
   Search,
   ChevronDown,
@@ -39,22 +39,21 @@ export const DashboardView: React.FC = () => {
   // Local state for debounced search input
   const [searchTerm, setSearchTerm] = useState(filters.q);
   // Selected job for detail modal
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selectedJob, setSelectedJob] = useState<Posting | null>(null);
 
   // Dropdown states
   const [showSourceDropdown, setShowSourceDropdown] = useState(false);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
-  // List of unique sources & types to filter on (can also be queried dynamically)
-  const sources = ["linkedin", "indeed", "searxng", "greenhouse", "ashby", "lever", "workday"];
+  // ATS providers ingested by jobctl (config/ats_companies.yml) — see AGENTS.md.
+  const sources = ["greenhouse", "lever", "ashby", "workday", "workable", "smartrecruiters", "recruitee"];
   const jobTypes = [
-    "remote",
-    "on-site",
-    "hybrid",
     "full-time",
     "part-time",
     "contract",
+    "internship",
+    "remote",
   ];
 
   // Debounce search query input
@@ -91,27 +90,13 @@ export const DashboardView: React.FC = () => {
 
   const formatSource = (src: string | null | undefined) => {
     if (!src) return "UNKNOWN";
-    const s = src.toLowerCase();
-    if (s.includes("linkedin")) return "LINKEDIN";
-    if (s.includes("indeed")) return "INDEED";
-    if (s.includes("searx")) return "SEARXNG";
-    if (s.includes("greenhouse")) return "GREENHOUSE";
-    if (s.includes("ashby")) return "ASHBY";
-    if (s.includes("lever")) return "LEVER";
-    if (s.includes("workday")) return "WORKDAY";
     return src.toUpperCase();
   };
 
-  // Badge styles helper
+  // Badge styles helper — one per ATS provider (app/agents/ats_providers/)
   const getSourceStyles = (src: string | null | undefined) => {
     const formatted = formatSource(src);
     switch (formatted) {
-      case "LINKEDIN":
-        return "border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50";
-      case "INDEED":
-        return "border-orange-200 text-orange-700 bg-orange-50/50 hover:bg-orange-50";
-      case "SEARXNG":
-        return "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50";
       case "GREENHOUSE":
         return "border-purple-200 text-purple-700 bg-purple-50/50 hover:bg-purple-50";
       case "ASHBY":
@@ -120,6 +105,12 @@ export const DashboardView: React.FC = () => {
         return "border-rose-200 text-rose-700 bg-rose-50/50 hover:bg-rose-50";
       case "WORKDAY":
         return "border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50";
+      case "WORKABLE":
+        return "border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50";
+      case "SMARTRECRUITERS":
+        return "border-orange-200 text-orange-700 bg-orange-50/50 hover:bg-orange-50";
+      case "RECRUITEE":
+        return "border-emerald-200 text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50";
       default:
         return "border-slate-200 text-slate-600 bg-slate-50";
     }
@@ -331,9 +322,13 @@ export const DashboardView: React.FC = () => {
                   <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
                   <span className="capitalize">
                     Sort by:{" "}
-                    {sort.sort_by === "created_at"
-                      ? "Date Created"
-                      : sort.sort_by}
+                    {sort.sort_by === "posted_at"
+                      ? "Date Posted"
+                      : sort.sort_by === "first_seen_at"
+                      ? "Date Discovered"
+                      : sort.sort_by === "company_name"
+                      ? "Company"
+                      : "Job Title"}
                   </span>
                 </div>
                 <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
@@ -346,15 +341,27 @@ export const DashboardView: React.FC = () => {
                   />
                   <div className="absolute right-0 mt-2 w-full sm:w-48 bg-white border border-slate-100 rounded-xl shadow-lg z-20 py-1.5 animate-fade-in">
                     <button
-                      onClick={() => handleSortChange("created_at")}
+                      onClick={() => handleSortChange("posted_at")}
                       className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-slate-50 transition-colors ${
-                        sort.sort_by === "created_at"
+                        sort.sort_by === "posted_at"
                           ? "text-blue-600 bg-blue-50/30"
                           : "text-slate-700"
                       }`}
                     >
-                      Date Created (
-                      {sort.sort_by === "created_at" ? sort.sort_order : "desc"}
+                      Date Posted (
+                      {sort.sort_by === "posted_at" ? sort.sort_order : "desc"}
+                      )
+                    </button>
+                    <button
+                      onClick={() => handleSortChange("first_seen_at")}
+                      className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-slate-50 transition-colors ${
+                        sort.sort_by === "first_seen_at"
+                          ? "text-blue-600 bg-blue-50/30"
+                          : "text-slate-700"
+                      }`}
+                    >
+                      Date Discovered (
+                      {sort.sort_by === "first_seen_at" ? sort.sort_order : "desc"}
                       )
                     </button>
                     <button
@@ -369,15 +376,15 @@ export const DashboardView: React.FC = () => {
                       {sort.sort_by === "title" ? sort.sort_order : "asc"})
                     </button>
                     <button
-                      onClick={() => handleSortChange("company")}
+                      onClick={() => handleSortChange("company_name")}
                       className={`w-full text-left px-4 py-2.5 text-xs font-semibold hover:bg-slate-50 transition-colors ${
-                        sort.sort_by === "company"
+                        sort.sort_by === "company_name"
                           ? "text-blue-600 bg-blue-50/30"
                           : "text-slate-700"
                       }`}
                     >
                       Company (
-                      {sort.sort_by === "company" ? sort.sort_order : "asc"})
+                      {sort.sort_by === "company_name" ? sort.sort_order : "asc"})
                     </button>
                   </div>
                 </>
@@ -389,7 +396,7 @@ export const DashboardView: React.FC = () => {
               filters.source ||
               filters.job_type ||
               filters.location ||
-              sort.sort_by !== "created_at") && (
+              sort.sort_by !== "posted_at") && (
               <button
                 onClick={resetFilters}
                 className="w-full sm:w-auto px-3 py-2.5 text-slate-500 hover:text-slate-800 text-xs font-semibold transition-colors duration-150 flex items-center justify-center space-x-1"
@@ -415,7 +422,7 @@ export const DashboardView: React.FC = () => {
               <tr className="border-b border-slate-100 bg-slate-50/40 text-[11px] font-extrabold tracking-wider text-slate-400 uppercase">
                 <th className="px-6 py-4 font-bold">Job Title & Company</th>
                 <th className="px-6 py-4 font-bold">Location & Type</th>
-                <th className="px-6 py-4 font-bold">Skills</th>
+                <th className="px-6 py-4 font-bold">Tags</th>
                 <th className="px-6 py-4 font-bold">Source</th>
                 <th className="px-6 py-4 font-bold text-center">Action</th>
               </tr>
@@ -459,7 +466,7 @@ export const DashboardView: React.FC = () => {
                         {job.title}
                       </div>
                       <div className="text-xs font-semibold text-slate-400 mt-1 line-clamp-1">
-                        {job.company || "Unknown"}
+                        {job.company_name || "Unknown"}
                       </div>
                     </td>
 
@@ -470,31 +477,31 @@ export const DashboardView: React.FC = () => {
                           <MapPin className="w-3.5 h-3.5 text-slate-400 mr-1 shrink-0" />
                           {job.location || "Remote"}
                         </span>
-                        {job.job_type && (
+                        {job.employment_type && (
                           <span
-                            className={`text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-full border uppercase shrink-0 ${getJobTypeStyles(job.job_type)}`}
+                            className={`text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-full border uppercase shrink-0 ${getJobTypeStyles(job.employment_type)}`}
                           >
-                            {job.job_type}
+                            {job.employment_type}
                           </span>
                         )}
                       </div>
                     </td>
 
-                    {/* Skills Tags */}
+                    {/* Tags */}
                     <td className="px-6 py-4.5 max-w-[260px]">
                       <div className="flex flex-wrap gap-1.5 max-h-[50px] overflow-hidden">
-                        {job.skills && job.skills.length > 0 ? (
-                          job.skills.map((skill, sIdx) => (
+                        {job.tags && job.tags.length > 0 ? (
+                          job.tags.map((tag, sIdx) => (
                             <span
                               key={sIdx}
                               className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100/50 px-2 py-0.5 rounded-md"
                             >
-                              {skill}
+                              {tag}
                             </span>
                           ))
                         ) : (
                           <span className="text-[10px] font-medium text-slate-400 italic">
-                            No skill tags
+                            No tags
                           </span>
                         )}
                       </div>
@@ -504,9 +511,9 @@ export const DashboardView: React.FC = () => {
                     <td className="px-6 py-4.5">
                       <div className="flex items-center">
                         <span
-                          className={`text-[10px] font-extrabold tracking-wider border px-2.5 py-1 rounded-lg shrink-0 transition-colors uppercase ${getSourceStyles(job.source)}`}
+                          className={`text-[10px] font-extrabold tracking-wider border px-2.5 py-1 rounded-lg shrink-0 transition-colors uppercase ${getSourceStyles(job.provider)}`}
                         >
-                          {formatSource(job.source)}
+                          {formatSource(job.provider)}
                         </span>
                       </div>
                     </td>
@@ -514,7 +521,7 @@ export const DashboardView: React.FC = () => {
                     {/* Action Button */}
                     <td className="px-6 py-4.5 text-center">
                       <button
-                        onClick={() => navigate(`/jobs/${job._id || idx}`)}
+                        onClick={() => navigate(`/jobs/${job.id || idx}`)}
                         className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs tracking-wide rounded-xl shadow-sm hover:shadow transition-all duration-150 cursor-pointer"
                       >
                         View Details
@@ -623,15 +630,15 @@ export const DashboardView: React.FC = () => {
               <div>
                 <div className="flex items-center space-x-2">
                   <span
-                    className={`text-[9px] font-extrabold tracking-wider border px-2 py-0.5 rounded-md ${getSourceStyles(selectedJob.source)}`}
+                    className={`text-[9px] font-extrabold tracking-wider border px-2 py-0.5 rounded-md ${getSourceStyles(selectedJob.provider)}`}
                   >
-                    {formatSource(selectedJob.source)}
+                    {formatSource(selectedJob.provider)}
                   </span>
-                  {selectedJob.job_type && (
+                  {selectedJob.employment_type && (
                     <span
-                      className={`text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md border uppercase ${getJobTypeStyles(selectedJob.job_type)}`}
+                      className={`text-[9px] font-bold tracking-wider px-2 py-0.5 rounded-md border uppercase ${getJobTypeStyles(selectedJob.employment_type)}`}
                     >
-                      {selectedJob.job_type}
+                      {selectedJob.employment_type}
                     </span>
                   )}
                 </div>
@@ -639,7 +646,7 @@ export const DashboardView: React.FC = () => {
                   {selectedJob.title}
                 </h2>
                 <p className="text-sm font-semibold text-slate-400 mt-0.5">
-                  {selectedJob.company || "Unknown company"}
+                  {selectedJob.company_name || "Unknown company"}
                 </p>
               </div>
               <button
@@ -685,30 +692,32 @@ export const DashboardView: React.FC = () => {
                       Posted Date
                     </div>
                     <div className="text-xs font-semibold text-slate-800">
-                      {selectedJob.posted_date || "Unknown"}
+                      {selectedJob.posted_at
+                        ? new Date(selectedJob.posted_at).toLocaleDateString()
+                        : "Unknown"}
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Skills Area */}
+              {/* Tags */}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                  Required Skills
+                  Tags
                 </h3>
                 <div className="flex flex-wrap gap-2">
-                  {selectedJob.skills && selectedJob.skills.length > 0 ? (
-                    selectedJob.skills.map((skill, sIdx) => (
+                  {selectedJob.tags && selectedJob.tags.length > 0 ? (
+                    selectedJob.tags.map((tag, sIdx) => (
                       <span
                         key={sIdx}
                         className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100/50 px-3 py-1 rounded-lg"
                       >
-                        {skill}
+                        {tag}
                       </span>
                     ))
                   ) : (
                     <span className="text-xs text-slate-400 italic font-medium">
-                      No skill requirements listed
+                      No tags
                     </span>
                   )}
                 </div>
@@ -720,7 +729,7 @@ export const DashboardView: React.FC = () => {
                   Job Description
                 </h3>
                 <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap font-medium">
-                  {selectedJob.description || "No description provided."}
+                  {selectedJob.description_text || "No description provided."}
                 </div>
               </div>
             </div>

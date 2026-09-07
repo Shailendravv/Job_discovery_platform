@@ -2,14 +2,14 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, ExternalLink, Upload, CloudUpload, CheckCircle, Download, Sparkles, FileText, AlertCircle, X } from "lucide-react";
 import { api, ApiError } from "@/services/api";
-import type { JobDetail, ResumeUploadResponse, ResumeTailorResponse } from "@/types";
+import type { PostingDetail, ResumeUploadResponse, ResumeTailorResponse } from "@/types";
 import { sanitizeHtml, isHtmlContent, isTreeFormat, extractTreeText } from "@/utils/sanitize";
 
 export const JobDetailsView: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
 
-  const [job, setJob] = useState<JobDetail | null>(null);
+  const [job, setJob] = useState<PostingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,7 +36,7 @@ export const JobDetailsView: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await api.getJobById(jobId);
+        const data = await api.getPostingById(jobId);
         setJob(data);
 
         // ── Hydrate resume lifecycle state from backend ──
@@ -204,10 +204,6 @@ export const JobDetailsView: React.FC = () => {
 
   const getSourceLabel = (src: string | null | undefined): string => {
     if (!src) return "UNKNOWN";
-    const s = src.toLowerCase();
-    if (s.includes("linkedin")) return "LINKEDIN";
-    if (s.includes("indeed")) return "INDEED";
-    if (s.includes("searx")) return "SEARXNG";
     return src.toUpperCase();
   };
 
@@ -273,7 +269,7 @@ export const JobDetailsView: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    {job.location || "Remote"} • {job.company}
+                    {job.location || "Remote"} • {job.company_name}
                   </p>
                 </div>
               </div>
@@ -310,16 +306,18 @@ export const JobDetailsView: React.FC = () => {
                 <p className="text-sm font-bold text-slate-800">{job.salary || "Not specified"}</p>
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Experience</p>
-                <p className="text-sm font-bold text-slate-800">{job.experience || "Not specified"}</p>
+                <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Posted</p>
+                <p className="text-sm font-bold text-slate-800">
+                  {job.posted_at ? new Date(job.posted_at).toLocaleDateString() : "Unknown"}
+                </p>
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">Job Type</p>
-                <p className="text-sm font-bold text-slate-800 capitalize">{job.job_type || "Unknown"}</p>
+                <p className="text-sm font-bold text-slate-800 capitalize">{job.employment_type || "Unknown"}</p>
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider mb-1">ID</p>
-                <p className="text-sm font-bold text-slate-800">{job.ref_id || job.id?.slice(-8).toUpperCase() || "N/A"}</p>
+                <p className="text-sm font-bold text-slate-800">{job.id?.slice(-8).toUpperCase() || "N/A"}</p>
               </div>
             </div>
 
@@ -327,43 +325,32 @@ export const JobDetailsView: React.FC = () => {
             <div className="space-y-6">
               <div>
                 <h2 className="text-base font-bold text-slate-900 mb-2">About the Role</h2>
-                {job.description && isHtmlContent(job.description) ? (
+                {job.description_text && isHtmlContent(job.description_text) ? (
                   <div
                     className="text-sm text-slate-600 leading-relaxed [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-slate-900 [&_h1]:mb-2 [&_h2]:text-base [&_h2]:font-bold [&_h2]:text-slate-900 [&_h2]:mb-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-slate-800 [&_h3]:mb-1 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:space-y-1 [&_li]:text-sm [&_p]:mb-2 [&_strong]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_a]:hover:text-blue-800"
-                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(job.description) }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(job.description_text) }}
                   />
-                ) : job.description && isTreeFormat(job.description) ? (
+                ) : job.description_text && isTreeFormat(job.description_text) ? (
                   <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
-                    {extractTreeText(job.description)}
+                    {extractTreeText(job.description_text)}
                   </p>
                 ) : (
                   <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
-                    {job.description || "No description provided."}
+                    {job.description_text || "No description provided."}
                   </p>
                 )}
               </div>
 
-              {job.requirements && job.requirements.length > 0 && (
+              {job.tags && job.tags.length > 0 && (
                 <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Requirements</h3>
-                  <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                    {job.requirements.map((req, idx) => (
-                      <li key={idx}>{req}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {job.skills && job.skills.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Required Skills</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Tags</h3>
                   <div className="flex flex-wrap gap-2">
-                    {job.skills.map((skill, idx) => (
+                    {job.tags.map((tag, idx) => (
                       <span
                         key={idx}
                         className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100/50 px-2.5 py-1 rounded-lg"
                       >
-                        {skill}
+                        {tag}
                       </span>
                     ))}
                   </div>
@@ -374,7 +361,7 @@ export const JobDetailsView: React.FC = () => {
               <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                 <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Source:</span>
                 <span className="text-[10px] font-extrabold tracking-wider border px-2.5 py-1 rounded-lg uppercase bg-emerald-50 text-emerald-700 border-emerald-200">
-                  {getSourceLabel(job.source)}
+                  {getSourceLabel(job.provider)}
                 </span>
               </div>
             </div>
@@ -513,7 +500,7 @@ export const JobDetailsView: React.FC = () => {
                 <Sparkles className="w-5 h-5 text-blue-200 animate-pulse" />
               </div>
               <p className="text-sm text-blue-100 mb-5 leading-relaxed">
-                Our AI will analyze <span className="font-bold text-white">Job ID: {job.ref_id || job.id?.slice(-8).toUpperCase() || "N/A"}</span>
+                Our AI will analyze <span className="font-bold text-white">Job ID: {job.id?.slice(-8).toUpperCase() || "N/A"}</span>
                 {uploadedResume ? (
                   <> and optimize <span className="font-bold text-white">Resume: {uploadedResume.parsed_data?.name || uploadedResume.resume_id.slice(-8).toUpperCase()}</span> to highlight the most relevant skills and experiences.</>
                 ) : (
@@ -659,7 +646,7 @@ export const JobDetailsView: React.FC = () => {
                 )}
                 {tailorResult.download_urls.cover_letter_pdf && (
                   <button
-                    onClick={() => handleDownload(tailorResult.download_urls.cover_letter_pdf, "Cover Letter PDF")}
+                    onClick={() => handleDownload(tailorResult.download_urls.cover_letter_pdf!, "Cover Letter PDF")}
                     disabled={downloadingUrls.has(tailorResult.download_urls.cover_letter_pdf)}
                     className="w-full bg-indigo-50 text-indigo-700 border border-indigo-200 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
                   >

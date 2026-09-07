@@ -55,8 +55,8 @@ def _slugify(name: str) -> str:
 
 def load_raw_companies(config_path: str = CONFIG_PATH) -> list[dict]:
     """Parse the ATS companies YAML file. Returns [] if missing/malformed —
-    mirrors ``ats_workflow._load_ats_companies`` so both call sites degrade
-    the same way."""
+    degrades quietly rather than raising, since a bad config file shouldn't
+    crash the whole ingest run."""
     if not os.path.isfile(config_path):
         log.warning("[ingest] config file not found: %s", config_path)
         return []

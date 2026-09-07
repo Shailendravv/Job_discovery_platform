@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Clear all data from the `jobs`, `resumes`, and `tailor_sessions` collections.
+Clear all data from the `postings`, `verdicts`, `prefilter_runs`,
+`ingest_runs`, `resumes`, and `tailor_sessions` collections.
 
 This preserves the collections and their indexes — only documents are removed.
 Useful for testing or resetting the database between search runs.
@@ -50,7 +51,7 @@ async def clear_collection(db, collection_name: str, dry_run: bool = False) -> i
 
 
 async def clear_all(uri: str, db_name: str, dry_run: bool = False, force: bool = False):
-    """Clear jobs, resumes, and tailor_sessions collections."""
+    """Clear postings, verdicts, prefilter_runs, ingest_runs, resumes, and tailor_sessions collections."""
     client = AsyncIOMotorClient(uri)
     db = client[db_name]
 
@@ -63,7 +64,7 @@ async def clear_all(uri: str, db_name: str, dry_run: bool = False, force: bool =
             print("🔍 DRY RUN MODE — no data will be deleted\n")
 
         # Count current documents
-        collections = ["jobs", "resumes", "tailor_sessions"]
+        collections = ["postings", "verdicts", "prefilter_runs", "ingest_runs", "resumes", "tailor_sessions"]
         counts = {}
         for coll in collections:
             counts[coll] = await count_documents(db, coll)
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Clear all documents from jobs, resumes, and tailor_sessions collections",
+        description="Clear all documents from postings, verdicts, prefilter_runs, ingest_runs, resumes, and tailor_sessions collections",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

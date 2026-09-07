@@ -301,14 +301,22 @@ async def tailor_resume_structured(
             status_code=404, detail=f"Resume not found: {request.resume_id}"
         )
 
-    # ── Fetch job ──
-    from app.services.db_service import get_job_by_id
-
-    job = await get_job_by_id(db, request.job_id)
-    if not job:
+    # ── Fetch posting (app/ingest — the ATS ingest pipeline's job store) ──
+    posting_doc = await db.postings.find_one({"_id": request.job_id})
+    if not posting_doc:
         raise HTTPException(
             status_code=404, detail=f"Job not found: {request.job_id}"
         )
+    # Adapt Posting's field names to the shape the tailoring pipeline
+    # already expects (title/company/description/skills/location) —
+    # see app/services/structured_tailor.py and cover_letter.py.
+    job = {
+        "title": posting_doc.get("title", ""),
+        "company": posting_doc.get("company_name", ""),
+        "description": posting_doc.get("description_text", ""),
+        "location": posting_doc.get("location"),
+        "skills": [],
+    }
 
     resume_text = resume.get("extracted_text", "")
     parsed_data = resume.get("parsed_data", {})
