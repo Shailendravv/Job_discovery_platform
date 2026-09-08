@@ -16,7 +16,7 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 - **Backend:** FastAPI + Motor (async MongoDB). Entry: `backend/app/main.py`
 - **Job data:** the ATS ingest pipeline (`backend/app/ingest/`, driven by `jobctl ingest` or `POST /api/v1/postings/ingest`) — fetches from 7 ATS connectors (`backend/app/agents/ats_providers/`) for the companies in `config/ats_companies.yml`, normalizes, dedupes, and prefilters into the `postings` collection. There is no live-scrape search path; the frontend only ever reads what's already in the database.
 - **Frontend:** React 19 + TypeScript + Vite 8 + Tailwind CSS v4. Entry: `frontend/src/main.tsx`
-- **LLM:** Fixed two-step chain — Claude (`claude-haiku-4-5`, via `ANTHROPIC_API_KEY`) first, falling back to local Ollama (`app/services/llm/claude_fallback_provider.py`) if the Claude API call fails. Used for resume tailoring / cover letters, not for discovery. `LLM_PROVIDER` env var: `claude` (default, the fallback chain), `claude-only`, or `ollama`.
+- **LLM:** Default chain — Claude (Haiku) via the local **Claude Code CLI** (subscription-billed, `app/services/llm/claude_code_provider.py`) first, falling back to local Ollama (`app/services/llm/claude_fallback_provider.py`) if the CLI call fails. A metered-API chain (`claude-haiku-4-5` via `ANTHROPIC_API_KEY`) is still available. Used for resume tailoring / cover letters, not for discovery. `LLM_PROVIDER` env var: `claude-code` (default, CLI + Ollama fallback), `claude-code-only`, `claude` (API + Ollama fallback), `claude-only`, or `ollama`. See `backend/docs/llm.md`.
 - **Judging:** not an API call — `jobctl next` hands unjudged postings to a Claude Code session (this CLI), which writes `verdicts.json` back via `jobctl judge --apply`. See "Judging pipeline" below.
 - **Config:** `backend/app/core/config.py` — Pydantic Settings from `.env` or OS env vars
 
@@ -164,7 +164,7 @@ this), `backend/docs/ingest.md` (ATS connectors, source registry).
 - Resume endpoints have no dedicated tests
 
 ## Secrets & env vars
-- Only one secret matters: `ANTHROPIC_API_KEY`. Without it the LLM chain falls back to Ollama automatically (no error) — see `app/services/llm/claude_fallback_provider.py`.
+- Default chain (`LLM_PROVIDER=claude-code`) needs **no secret** — it uses the local `claude` CLI's own subscription auth (`claude auth login`). `ANTHROPIC_API_KEY` only matters if you switch to `LLM_PROVIDER=claude` (the metered Anthropic API chain). Either way, a missing/failed primary falls back to Ollama automatically (no error) — see `app/services/llm/claude_fallback_provider.py`.
 - `start.sh` only sets `MONGODB_URI`/`MONGODB_DB` defaults itself — everything else the app needs is a pydantic-settings default in `backend/app/core/config.py`, read from `backend/.env`. **`backend/.env` is the source of truth for app settings**; `start.sh` no longer exports anything that would override it.
 - Secrets are loaded dynamically, never stored in workspace files:
   1. Already-set terminal env vars (highest priority)

@@ -4,6 +4,7 @@ import { ArrowLeft, ExternalLink, Upload, CloudUpload, CheckCircle, Download, Sp
 import { api, ApiError } from "@/services/api";
 import type { PostingDetail, ResumeUploadResponse, ResumeTailorResponse } from "@/types";
 import { sanitizeHtml, isHtmlContent, isTreeFormat, extractTreeText } from "@/utils/sanitize";
+import { isPostingId } from "@/utils/postingId";
 
 export const JobDetailsView: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -29,12 +30,27 @@ export const JobDetailsView: React.FC = () => {
   // Download state (tracking which URL is being downloaded)
   const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
 
+  // A route param that isn't a posting id can only have come from a stale
+  // link — the row-index URLs (/jobs/9, /jobs/0) the old Dashboard minted
+  // still sit in tabs, history and bookmarks. Don't spend a request on it.
+  const staleLink = !isPostingId(jobId);
+  // The posting id is well formed but the backend has no such row (404) —
+  // a removed posting, not a broken app. Retrying can't help, so that state
+  // gets its own copy and no Retry button.
+  const [notFound, setNotFound] = useState(false);
+  // Bumped by Retry so the fetch effect re-runs after a transient failure.
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
-    if (!jobId) return;
+    // Nothing to fetch for a stale link. `loading` is left as-is and the
+    // render guard below skips the spinner instead, so the effect stays
+    // free of synchronous setState.
+    if (staleLink || !jobId) return;
 
     const fetchJobDetail = async () => {
       setLoading(true);
       setError(null);
+      setNotFound(false);
       try {
         const data = await api.getPostingById(jobId);
         setJob(data);
@@ -70,6 +86,7 @@ export const JobDetailsView: React.FC = () => {
         }
       } catch (err) {
         if (err instanceof ApiError) {
+          setNotFound(err.status === 404);
           setError(err.message);
         } else {
           setError("An unexpected error occurred while loading job details.");
@@ -80,7 +97,7 @@ export const JobDetailsView: React.FC = () => {
     };
 
     fetchJobDetail();
-  }, [jobId]);
+  }, [jobId, staleLink, reloadKey]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,7 +225,8 @@ export const JobDetailsView: React.FC = () => {
   };
 
   // ── Loading State ──
-  if (loading) {
+  // A stale link never starts a fetch, so it must never show the spinner.
+  if (loading && !staleLink) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <div className="w-12 h-12 border-[3px] border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
@@ -219,21 +237,56 @@ export const JobDetailsView: React.FC = () => {
   }
 
   // ── Error State ──
-  if (error || !job) {
+  //
+  // Three outcomes, not one. A stale link and a removed posting are both
+  // expected and both unfixable by retrying, so they get a plain
+  // explanation and a way back to the dashboard; only a genuine failure
+  // (network, 5xx) offers Retry. Collapsing all three into "Failed to Load
+  // Job — Posting not found: 9" is what made a dead link look like a
+  // broken app.
+  if (staleLink || error || !job) {
+    const unreachable = staleLink || notFound;
+    const heading = staleLink
+      ? "This link is out of date"
+      : notFound
+        ? "This posting is no longer available"
+        : "Failed to Load Job";
+    const message = staleLink
+      ? "The address doesn't point at a real posting — it's left over from an older version of the dashboard. Open the job from the jobs list again."
+      : notFound
+        ? "It may have been taken down at the source, or the link may be from an older version of the dashboard."
+        : error;
+
     return (
       <div className="max-w-lg mx-auto py-16 text-center">
-        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
-          <ExternalLink className="w-6 h-6 text-red-500" />
-        </div>
-        <h2 className="text-lg font-bold text-slate-900 mb-1">Failed to Load Job</h2>
-        <p className="text-sm text-slate-500 mb-6">{error || "Job not found"}</p>
-        <button
-          onClick={() => navigate("/")}
-          className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-all shadow-sm"
+        <div
+          className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+            unreachable ? "bg-amber-50" : "bg-red-50"
+          }`}
         >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Jobs
-        </button>
+          <AlertCircle
+            className={`w-6 h-6 ${unreachable ? "text-amber-500" : "text-red-500"}`}
+          />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 mb-1">{heading}</h2>
+        <p className="text-sm text-slate-500 mb-6">{message}</p>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 transition-all shadow-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Jobs
+          </button>
+          {!unreachable && (
+            <button
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 border border-slate-200 bg-white text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all shadow-sm"
+            >
+              Retry
+            </button>
+          )}
+        </div>
       </div>
     );
   }

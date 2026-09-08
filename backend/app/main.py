@@ -54,10 +54,12 @@ async def startup():
             "  CLOUDINARY                  : not configured (set CLOUDINARY_* env vars)"
         )
 
-    # Log LLM Provider Config — fixed Claude (Haiku) -> Ollama chain
+    # Log LLM Provider Config — default Claude Code (Haiku) -> Ollama chain
     log.info("=== LLM Provider Config ===")
     log.info("  LLM_PROVIDER               : %s", settings.LLM_PROVIDER)
-    log.info("  CLAUDE_MODEL                : %s", settings.CLAUDE_MODEL)
+    log.info("  CLAUDE_CODE_BIN             : %s", settings.CLAUDE_CODE_BIN)
+    log.info("  CLAUDE_CODE_MODEL           : %s", settings.CLAUDE_CODE_MODEL)
+    log.info("  CLAUDE_MODEL                : %s (Anthropic API chain only)", settings.CLAUDE_MODEL)
     log.info("  OLLAMA_BASE_URL            : %s (fallback)", settings.OLLAMA_BASE_URL)
     log.info("  OLLAMA_MODEL               : %s", settings.OLLAMA_MODEL)
     log.info("============================")

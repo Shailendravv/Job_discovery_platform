@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -36,8 +37,20 @@ router = APIRouter()
 DEFAULT_LATEST_LIMIT = 200
 DEFAULT_LATEST_SINCE_DAYS = 14
 
+# ``Posting.id`` is declared ``Field(..., alias="_id")`` so a Mongo document
+# validates straight into the model and ``model_dump(by_alias=True)`` writes
+# it back as ``_id`` (store.py). FastAPI, though, serializes response models
+# with ``by_alias=True`` by default, which would leak that storage-level name
+# into the public JSON — the frontend routes on ``posting.id``. These reads
+# opt out so the wire format stays ``id``; the model keeps its alias.
+BY_FIELD_NAME = {"response_model_by_alias": False}
 
-@router.get("", response_model=PostingListResponse)
+# A posting ``_id`` is always the sha256 hex digest from
+# ``app.ingest.models.posting_id`` — 64 lowercase hex chars, nothing else.
+POSTING_ID_RE = re.compile(r"[0-9a-f]{64}")
+
+
+@router.get("", response_model=PostingListResponse, **BY_FIELD_NAME)
 async def get_postings(
     limit: int = Query(DEFAULT_LATEST_LIMIT, ge=1, le=500),
     since_days: int = Query(DEFAULT_LATEST_SINCE_DAYS, ge=1, le=365),
@@ -63,7 +76,7 @@ async def get_postings(
     return PostingListResponse(postings=postings, total=len(postings))
 
 
-@router.get("/shortlist", response_model=ShortlistResponse)
+@router.get("/shortlist", response_model=ShortlistResponse, **BY_FIELD_NAME)
 async def get_shortlist(
     min_score: int = Query(DEFAULT_SHORTLIST_MIN_SCORE, ge=0, le=10),
     since_days: int | None = Query(None, ge=1, le=365),
@@ -118,13 +131,36 @@ async def trigger_ingest(background_tasks: BackgroundTasks):
     return IngestTriggerResponse(run_id=run_id, status="started")
 
 
-@router.get("/{posting_id}", response_model=PostingDetailResponse)
+@router.get("/{posting_id}", response_model=PostingDetailResponse, **BY_FIELD_NAME)
 async def get_posting_detail(posting_id: str, db=Depends(get_db)):
     """A single posting plus the active base resume and tailoring status,
     for the Job Details page."""
+    # Two different 404s, and the client renders them differently. Every
+    # ``_id`` is a sha256 digest (models.posting_id), so an id that isn't
+    # one can never match anything — that's a stale/broken *link*, not a
+    # missing posting, and it isn't worth a database round trip. The
+    # row-index URLs the old Dashboard minted (/jobs/9, /jobs/0) land here
+    # and used to come back as a bare "Posting not found: 9", which reads
+    # like the pipeline dropped a posting it never had.
+    if not POSTING_ID_RE.fullmatch(posting_id):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"'{posting_id}' is not a posting id, so this link is stale — "
+                "posting ids are 64-character hex digests. Open the job from "
+                "the dashboard again."
+            ),
+        )
+
     doc = await db.postings.find_one({"_id": posting_id})
     if not doc:
-        raise HTTPException(status_code=404, detail=f"Posting not found: {posting_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Posting {posting_id} is no longer available — it may have "
+                "been removed from the source ATS."
+            ),
+        )
 
     posting = Posting.model_validate(doc)
 

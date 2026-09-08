@@ -520,9 +520,14 @@ export const DashboardView: React.FC = () => {
 
                     {/* Action Button */}
                     <td className="px-6 py-4.5 text-center">
+                      {/* Never fall back to the row index here: an index is a
+                          valid-looking id that no posting owns, so a missing
+                          job.id turned into GET /api/v1/postings/0 → 404. */}
                       <button
-                        onClick={() => navigate(`/jobs/${job.id || idx}`)}
-                        className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs tracking-wide rounded-xl shadow-sm hover:shadow transition-all duration-150 cursor-pointer"
+                        onClick={() => navigate(`/jobs/${job.id}`)}
+                        disabled={!job.id}
+                        title={job.id ? undefined : "This posting has no id and can't be opened"}
+                        className="inline-flex items-center justify-center px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs tracking-wide rounded-xl shadow-sm hover:shadow transition-all duration-150 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
                       >
                         View Details
                       </button>

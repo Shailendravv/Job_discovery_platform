@@ -5,13 +5,22 @@ class Settings(BaseSettings):
     MONGODB_URI: str
 
     # ── LLM Provider Configuration ───────────────────────────────────────
-    # Fixed two-step chain: Claude (Haiku) first, Ollama as the local
-    # fallback if the Claude API call fails. No other providers.
-    LLM_PROVIDER: str = "claude"
+    # Default chain: Claude (Haiku) via the local Claude Code CLI first —
+    # billed against the Claude Code subscription, not per-token API
+    # usage — falling back to Ollama if the CLI call fails. See
+    # backend/docs/llm.md for the full provider matrix.
+    LLM_PROVIDER: str = "claude-code"
     MODEL_TEMPERATURE: float = 0.1
 
-    # Claude (Anthropic API) — credentials resolve from ANTHROPIC_API_KEY /
-    # an `ant auth login` profile; not read as a Settings field.
+    # Claude Code CLI — used by "claude-code" / "claude-code-only".
+    # CLAUDE_CODE_BIN is the binary name/path passed to shutil.which();
+    # CLAUDE_CODE_MODEL is passed to `claude --model`.
+    CLAUDE_CODE_BIN: str = "claude"
+    CLAUDE_CODE_MODEL: str = "haiku"
+
+    # Claude (Anthropic API) — used by "claude" / "claude-only". Credentials
+    # resolve from ANTHROPIC_API_KEY / an `ant auth login` profile; not read
+    # as a Settings field.
     CLAUDE_MODEL: str = "claude-haiku-4-5"
 
     # Ollama — local fallback
