@@ -16,13 +16,13 @@ different shape of query: score lives on the ``verdicts`` document, not on
 ``postings`` directly.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.ingest.role_match import build_title_query
+from app.ingest.role_match import build_title_pattern, build_title_query, relaxation_ladder
 
 DEFAULT_LIST_LIMIT = 40
 DEFAULT_NEXT_LIMIT = 25
@@ -43,6 +43,11 @@ class PostingFilter:
     # Job Discovery (frontend) filters — both deterministic, no LLM.
     posted_since: Optional[timedelta] = None  # effective posted date >= now - posted_since
     role_query: Optional[str] = None          # free-text role, matched against title_normalized
+    # One rung of the relaxation ladder, already parsed. Wins over
+    # role_query when set, so list_postings_relaxed can ask for a specific
+    # token set without serializing it back to a string and trusting the
+    # parser to round-trip it.
+    role_tokens: Optional[list[str]] = None
 
 
 def build_query(filters: PostingFilter, *, now: Optional[datetime] = None) -> dict:
@@ -75,7 +80,11 @@ def build_query(filters: PostingFilter, *, now: Optional[datetime] = None) -> di
             {"posted_at": None, "first_seen_at": {"$gte": cutoff}},
         ]
 
-    if filters.role_query is not None:
+    if filters.role_tokens is not None:
+        pattern = build_title_pattern(filters.role_tokens)
+        if pattern is not None:
+            query["title_normalized"] = {"$regex": pattern}
+    elif filters.role_query is not None:
         title_clause = build_title_query(filters.role_query)
         # A query of only stopwords yields no clause — that's "no role
         # filter", not "match nothing".
@@ -99,6 +108,59 @@ async def list_postings(
     query = build_query(filters)
     cursor = db.postings.find(query).sort(sort_field, sort_direction).limit(limit)
     return await cursor.to_list(length=limit)
+
+
+@dataclass
+class RelaxedSearchResult:
+    """What ``list_postings_relaxed`` found, and how hard it had to try."""
+
+    postings: list[dict]
+    tokens: list[str]   # the rung that produced these postings
+    relaxed: bool       # True if a stricter rung was tried first and matched nothing
+
+    @property
+    def role_label(self) -> str:
+        """The relaxed role, phrased for a UI ("full stack developer")."""
+        return " ".join(self.tokens)
+
+
+async def list_postings_relaxed(
+    db: AsyncIOMotorDatabase,
+    filters: PostingFilter,
+    *,
+    limit: int,
+    sort_field: str = "first_seen_at",
+    sort_direction: int = -1,
+) -> RelaxedSearchResult:
+    """``list_postings``, but falling back to a broader role query rather
+    than returning nothing.
+
+    Walks ``relaxation_ladder`` from the exact query outwards and stops at
+    the first rung with any result. Every other filter — window, prefilter
+    status, duplicates — is held fixed: only the *role* is relaxed, because
+    those others encode things the user actually asked for ("posted in the
+    last 24 hours" must stay true) while the role is a search, and a search
+    that returns nothing has failed at its job.
+
+    Costs one extra query per rung skipped, and only for queries that would
+    otherwise have returned zero — the common case (a query that matches)
+    is a single read, exactly as before.
+    """
+    ladder = relaxation_ladder(filters.role_query)
+    for index, rung in enumerate(ladder):
+        # rung == [] only for "no role filter at all", where the ladder has
+        # a single entry and this is just a plain read.
+        attempt = replace(filters, role_tokens=rung, role_query=None)
+        docs = await list_postings(
+            db, attempt, limit=limit, sort_field=sort_field, sort_direction=sort_direction
+        )
+        if docs:
+            return RelaxedSearchResult(postings=docs, tokens=rung, relaxed=index > 0)
+
+    # Nothing anywhere on the ladder. Report it against the query the user
+    # actually typed, not the last rung tried — claiming we "relaxed to
+    # developer" alongside an empty list would only confuse.
+    return RelaxedSearchResult(postings=[], tokens=ladder[0], relaxed=False)
 
 
 async def next_postings(db: AsyncIOMotorDatabase, *, limit: int = DEFAULT_NEXT_LIMIT) -> list[dict]:

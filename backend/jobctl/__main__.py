@@ -235,13 +235,21 @@ def sources_doctor(json_out: bool = typer.Option(False, "--json")) -> None:
 @prefilter_app.command("run")
 def prefilter_run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Compute stage counts without writing anything."),
+    reclassify: bool = typer.Option(
+        False, "--all",
+        help="Re-classify every posting, not just unclassified ones. Use after editing prefilter.yml.",
+    ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
-    """Classify every posting not yet prefiltered against
-    ``config/prefilter.yml`` — hard filters, then keyword floor (PLAN.md
-    §4). Re-runnable after editing the config; already-classified postings
-    are left alone. ``jobctl next`` only ever serves postings this leaves
-    with ``prefilter_status: passed``."""
+    """Classify postings against ``config/prefilter.yml`` — hard filters,
+    then keyword floor (PLAN.md §4). ``jobctl next`` only ever serves
+    postings this leaves with ``prefilter_status: passed``.
+
+    By default only postings not yet classified are read, which is what
+    ingest wants. **Editing prefilter.yml therefore changes nothing on its
+    own** — a posting rejected under the old rules keeps that rejection.
+    Pass ``--all`` to re-classify the whole collection against the current
+    config; combine with ``--dry-run`` first to preview the effect."""
     try:
         config = load_prefilter_config(PREFILTER_CONFIG_PATH)
     except FileNotFoundError as e:
@@ -250,7 +258,7 @@ def prefilter_run(
 
     async def _run():
         async with db_session() as db:
-            return await run_prefilter(db, config, dry_run=dry_run)
+            return await run_prefilter(db, config, dry_run=dry_run, reclassify=reclassify)
 
     result = asyncio.run(_run())
     data = result.to_dict()

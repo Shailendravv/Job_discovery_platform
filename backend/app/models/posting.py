@@ -42,6 +42,11 @@ class PostingListResponse(BaseModel):
     """GET /api/v1/postings — up to `limit` latest postings."""
     postings: List[Posting]
     total: int
+    # Set only when the exact role query matched nothing and a broader one
+    # did — e.g. "AI full stack developer" -> "fullstack developer". The UI
+    # must say so rather than passing the wider results off as an exact
+    # match; silently widening a search is its own kind of wrong answer.
+    role_relaxed_to: Optional[str] = None
 
 
 class PostingDetailResponse(Posting):

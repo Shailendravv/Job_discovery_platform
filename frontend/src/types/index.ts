@@ -42,6 +42,10 @@ export interface Posting {
 export interface PostingListResponse {
   postings: Posting[];
   total: number;
+  // Set only when the exact role query matched nothing and the backend
+  // fell back to a broader one ("AI full stack developer" ->
+  // "fullstack developer"). Null on an exact match.
+  role_relaxed_to?: string | null;
 }
 
 // Client-side pagination over the fetched postings — see AppContext.tsx.

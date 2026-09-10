@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
 from app.api.v1 import postings as postings_api
+from app.ingest.query import RelaxedSearchResult
 
 RUN_ID = "abc123def456"
 NOW = datetime(2026, 9, 8, 12, 0, 0, tzinfo=timezone.utc)
@@ -30,8 +31,12 @@ def db():
 
 @pytest.fixture
 def list_mock(monkeypatch):
-    mock = AsyncMock(return_value=[])
-    monkeypatch.setattr(postings_api, "list_postings", mock)
+    """The read endpoint goes through ``list_postings_relaxed`` — it falls
+    back to a broader role rather than returning nothing — so that is the
+    seam to stub. The filters it receives still carry the role the caller
+    actually typed; relaxation happens inside."""
+    mock = AsyncMock(return_value=RelaxedSearchResult(postings=[], tokens=[], relaxed=False))
+    monkeypatch.setattr(postings_api, "list_postings_relaxed", mock)
     return mock
 
 
@@ -213,3 +218,29 @@ def test_malformed_posted_within_is_a_422(client, list_mock):
 
     assert response.status_code == 422
     list_mock.assert_not_awaited()
+
+
+def test_relaxed_role_is_reported_to_the_client(client, monkeypatch):
+    """When the exact query matched nothing and a broader one did, the
+    response must say so. Passing widened results off as an exact match is
+    its own wrong answer — the UI renders this as "nothing matched X, these
+    are results for Y"."""
+    monkeypatch.setattr(
+        postings_api,
+        "list_postings_relaxed",
+        AsyncMock(return_value=RelaxedSearchResult(
+            postings=[], tokens=["fullstack", "developer"], relaxed=True,
+        )),
+    )
+
+    body = client.get(
+        "/api/v1/postings", params={"q": "AI full stack developer"}
+    ).json()
+
+    assert body["role_relaxed_to"] == "fullstack developer"
+
+
+def test_exact_match_reports_no_relaxation(client, list_mock):
+    body = client.get("/api/v1/postings", params={"q": "backend engineer"}).json()
+
+    assert body["role_relaxed_to"] is None

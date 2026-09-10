@@ -144,3 +144,34 @@ def title_matches(title: str, query: Optional[str]) -> bool:
     if pattern is None:
         return True
     return re.search(pattern, normalize_text_key(title)) is not None
+
+
+def relaxation_ladder(query: Optional[str]) -> list[list[str]]:
+    """Progressively broader token sets for one role query, strictest first.
+
+    ``build_title_query`` requires *every* token, which is the right default
+    but narrows multiplicatively: each qualifier a user adds cuts the result
+    set again. "AI full stack developer" matched 17 titles out of a
+    23k-posting corpus, and none of the 17 were inside the freshness window
+    — so the Discovery page reported "0 matches" while the corpus held
+    perfectly good full-stack roles. Zero results for a reasonable query is
+    a worse answer than slightly-too-broad ones, provided the caller says
+    what it broadened to.
+
+    Tokens are given up left to right because an English job title puts the
+    head noun last — "Senior AI Full Stack **Developer**". Shedding from the
+    left drops seniority and domain qualifiers while keeping the role
+    itself; the opposite order would relax towards "ai fullstack", which is
+    not a job anyone posts. This is a property of the language, not a
+    hand-maintained table, so it needs no upkeep as new domains appear.
+
+    The last rung is always a single token, never ``[]``: relaxing to an
+    empty filter would turn a role search into "show me everything", which
+    misleads more than showing nothing. An empty query is the one exception
+    — it yields ``[[]]``, meaning "no role filter", which callers must not
+    report as relaxation.
+    """
+    tokens = parse_role_query(query)
+    if not tokens:
+        return [[]]
+    return [tokens[i:] for i in range(len(tokens))]

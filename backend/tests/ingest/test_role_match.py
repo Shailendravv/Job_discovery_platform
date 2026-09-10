@@ -10,6 +10,7 @@ from app.ingest.role_match import (
     build_title_pattern,
     build_title_query,
     parse_role_query,
+    relaxation_ladder,
     title_matches,
 )
 
@@ -138,3 +139,54 @@ def test_python_and_mongo_paths_agree():
     query, title = "senior backend engineer", "Senior Back-End Developer"
     pattern = build_title_query(query)["$regex"]
     assert bool(re.search(pattern, normalize_text_key(title))) is title_matches(title, query)
+
+
+# ---- relaxation_ladder ------------------------------------------------
+#
+# The zero-results bug: every token is required, so each qualifier a user
+# adds narrows the search multiplicatively. "AI full stack developer"
+# matched 17 titles in a 23k-posting corpus, and none of those 17 survived
+# the freshness window -- the page reported "0 matches" for a corpus that
+# held perfectly good full-stack roles.
+
+def test_ladder_drops_leading_qualifiers_first():
+    """English job titles put the head noun last ("Senior AI Full Stack
+    *Developer*"), so giving up left-to-right sheds qualifiers while
+    keeping the role itself -- the opposite order would leave "ai
+    fullstack", which is not a job."""
+    assert relaxation_ladder("AI full stack developer") == [
+        ["ai", "fullstack", "developer"],
+        ["fullstack", "developer"],
+        ["developer"],
+    ]
+
+
+def test_ladder_for_a_single_token_query_has_one_rung():
+    assert relaxation_ladder("developer") == [["developer"]]
+
+
+def test_ladder_never_relaxes_to_the_empty_query():
+    """The last rung must still filter. Relaxing all the way to [] would
+    silently turn a role search into "show me everything", which is a
+    worse lie than showing nothing."""
+    for query in ("AI full stack developer", "senior backend engineer", "developer"):
+        assert all(rung for rung in relaxation_ladder(query))
+
+
+def test_ladder_of_an_empty_query_is_a_single_empty_rung():
+    """No role filter at all -- callers must not treat this as relaxation."""
+    assert relaxation_ladder("") == [[]]
+    assert relaxation_ladder(None) == [[]]
+
+
+def test_ladder_rungs_are_progressively_broader():
+    ladder = relaxation_ladder("senior AI full stack developer")
+    for stricter, looser in zip(ladder, ladder[1:]):
+        assert len(looser) < len(stricter)
+        assert set(looser) < set(stricter)
+
+
+def test_ladder_preserves_phrase_folding():
+    """Relaxation operates on parsed tokens, so "full stack" stays folded
+    into one token rather than shattering into "full" + "stack"."""
+    assert relaxation_ladder("machine learning engineer") == [["ml", "engineer"], ["engineer"]]

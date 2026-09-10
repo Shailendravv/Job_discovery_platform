@@ -15,6 +15,7 @@ from app.ingest.query import (
     PostingFilter,
     ShortlistFilter,
     list_postings,
+    list_postings_relaxed,
     shortlist_postings,
 )
 from app.ingest.runner import mark_run_failed, run_ingest
@@ -105,11 +106,20 @@ async def get_postings(
         posted_since=posted_since,
         role_query=q,
     )
-    docs = await list_postings(
+    found = await list_postings_relaxed(
         db, filters, limit=limit, sort_field="posted_at", sort_direction=-1
     )
-    postings = [Posting.model_validate(d) for d in docs]
-    return PostingListResponse(postings=postings, total=len(postings))
+    postings = [Posting.model_validate(d) for d in found.postings]
+    if found.relaxed:
+        log.info(
+            "[postings] role query %r matched nothing; relaxed to %r -> %d result(s)",
+            q, found.role_label, len(postings),
+        )
+    return PostingListResponse(
+        postings=postings,
+        total=len(postings),
+        role_relaxed_to=found.role_label if found.relaxed else None,
+    )
 
 
 @router.get("/shortlist", response_model=ShortlistResponse, **BY_FIELD_NAME)

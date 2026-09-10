@@ -29,12 +29,30 @@ hard_filters:
   # Substring match (case-insensitive) against the posting's location.
   # A posting passes if its location contains any of these, OR it's
   # remote and remote_ok is true.
+  #
+  # Scope: Delhi NCR (Delhi/New Delhi, Gurugram, Noida, Greater Noida) plus
+  # remote-anywhere. Notes on the specific entries:
+  #   - "delhi" substring-covers "New Delhi" and "Delhi NCR"; "noida"
+  #     likewise covers "Greater Noida", so neither needs its own entry.
+  #   - "gurgaon" is listed alongside "gurugram" because ATS feeds still
+  #     use the old spelling (both appear in the live corpus).
+  #   - "india" was here and has been removed: as a substring it admitted
+  #     every Indian city — 869 postings, 552 of them Bengaluru — which is
+  #     not Delhi NCR. That breadth is what "allowed_locations" is for.
   allowed_locations:
     - "remote"
-    - "noida"
+    - "delhi"
+    - "ncr"
     - "gurugram"
     - "greater noida"
-    - "india"
+    - "gurgaon"
+    - "noida"
+
+  # "Remote anywhere" — a remote-flagged posting clears the location rule
+  # whatever city it names. Caveat worth knowing: remote_flag comes straight
+  # from the ATS and is noisy (Ashby's isRemote in particular), so ~3,180
+  # postings carry remote_flag=true while naming a concrete office. Set this
+  # to false to require the location itself to match.
   remote_ok: true
 
   # Ceiling on years of experience mentioned in the description. A posting

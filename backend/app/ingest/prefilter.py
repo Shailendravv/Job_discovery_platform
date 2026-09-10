@@ -196,16 +196,28 @@ async def run_prefilter(
     *,
     limit: Optional[int] = None,
     dry_run: bool = False,
+    reclassify: bool = False,
 ) -> PrefilterRunResult:
     """Classify every posting not yet prefiltered, writing
     ``prefiltered``/``prefilter_status``/``prefilter_reason`` back and
     logging one ``prefilter_runs`` document with the stage counts (PLAN.md
     §4: "Log counts at each stage so I can see where postings die").
     ``dry_run=True`` computes the same counts without writing anything —
-    for previewing the effect of an edited ``prefilter.yml``."""
+    for previewing the effect of an edited ``prefilter.yml``.
+
+    ``reclassify=True`` re-runs over *every* posting, not just the
+    unclassified ones, and is what makes an edit to ``prefilter.yml``
+    actually take effect. Without it the config is inert for anything
+    already in the collection: a posting rejected under a stale
+    ``allowed_locations`` stays rejected forever, because the default query
+    never looks at it again. Ingest deliberately keeps the incremental
+    behaviour — reclassifying the whole corpus on every nightly run would
+    be pure waste — so this is opt-in, via ``jobctl prefilter run --all``.
+    A reclassify can move a posting in either direction, including back to
+    ``passed`` with its stale rejection reason cleared."""
     started = time.perf_counter()
 
-    cursor = db.postings.find({"prefiltered": False})
+    cursor = db.postings.find({} if reclassify else {"prefiltered": False})
     if limit is not None:
         cursor = cursor.limit(limit)
     docs = await cursor.to_list(length=limit)

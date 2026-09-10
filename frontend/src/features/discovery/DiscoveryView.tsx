@@ -11,6 +11,7 @@ import {
   Building2,
   MapPin,
   ExternalLink,
+  Info,
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { api, ApiError } from "@/services/api";
@@ -27,6 +28,11 @@ interface RunScope {
 // backend updates the run document as each stage lands, so anything much
 // faster than this just re-reads the same document.
 const POLL_INTERVAL_MS = 2000;
+
+// How long to wait after the last edit before re-filtering finished results.
+// The window select would be fine firing immediately, but the role input
+// shares this path and would otherwise issue a request per keystroke.
+const FILTER_DEBOUNCE_MS = 400;
 
 // Windows offered in the UI. The backend accepts any duration parse_duration
 // understands ("30m", "2w", ...); these are the ones worth a button.
@@ -85,12 +91,28 @@ export const DiscoveryView: React.FC = () => {
   const [run, setRun] = useState<IngestRunStatus | null>(null);
   const [results, setResults] = useState<Posting[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // The broader role the backend fell back to when the exact query matched
+  // nothing, or null on an exact match. Rendered rather than swallowed:
+  // showing wider results as though they were exact is its own wrong answer.
+  const [relaxedTo, setRelaxedTo] = useState<string | null>(null);
 
   // The scope the *running* session was started with — not the live input,
   // which the user may keep editing while the run is in flight. It is state
   // rather than a ref because the results header renders it.
   const [scope, setScope] = useState<RunScope>({ role: "", window: "24h" });
   const pollRef = useRef<number | null>(null);
+
+  // Re-filtering keeps the current results on screen while it runs, so
+  // without this the only feedback for changing the window would be the list
+  // silently changing length a moment later.
+  const [filtering, setFiltering] = useState(false);
+  // Kept apart from `error`: that one is only rendered in the "error" phase,
+  // which hides the results entirely. A filter that fails should leave the
+  // postings you were already looking at alone.
+  const [filterError, setFilterError] = useState<string | null>(null);
+  // Guards against out-of-order responses — change the window twice quickly
+  // and the first, slower GET must not overwrite the second one's results.
+  const requestSeq = useRef(0);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current !== null) {
@@ -113,6 +135,7 @@ export const DiscoveryView: React.FC = () => {
   }, [run?.status]);
 
   const loadResults = useCallback(async (runScope: RunScope) => {
+    const seq = ++requestSeq.current;
     // since_days is widened deliberately: it bounds when we first *saw* a
     // posting, while posted_within bounds when it was *posted*. A job
     // published an hour ago may have been in our corpus for a fortnight.
@@ -122,7 +145,9 @@ export const DiscoveryView: React.FC = () => {
       since_days: 365,
       limit: 200,
     });
+    if (seq !== requestSeq.current) return;
     setResults(response.postings);
+    setRelaxedTo(response.role_relaxed_to ?? null);
   }, []);
 
   // `runScope` is passed in rather than read from state: this callback is
@@ -156,11 +181,42 @@ export const DiscoveryView: React.FC = () => {
     [loadResults, stopPolling],
   );
 
+  // Once a run has produced results, the role and window inputs become live
+  // filters over the corpus that run already stored. The backend deliberately
+  // does not drop postings outside the window before storage and applies it
+  // again at read time (runner.run_ingest), so narrowing or widening is a
+  // re-GET — not another multi-minute crawl of every ATS source. Before this,
+  // changing the window updated only the dropdown: nothing re-queried, and
+  // the results header kept reporting the scope the run had started with.
+  useEffect(() => {
+    if (phase !== "done") return;
+
+    const next: RunScope = { role: role.trim(), window: selectedWindow };
+    if (next.role === scope.role && next.window === scope.window) return;
+
+    const timer = setTimeout(() => {
+      setFiltering(true);
+      setScope(next);
+      loadResults(next)
+        .then(() => setFilterError(null))
+        .catch((err) =>
+          setFilterError(
+            err instanceof ApiError ? err.message : "Could not re-filter the results.",
+          ),
+        )
+        .finally(() => setFiltering(false));
+    }, FILTER_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [role, selectedWindow, phase, scope.role, scope.window, loadResults]);
+
   const handleRunDiscovery = async () => {
     stopPolling();
     setPhase("starting");
     setError(null);
+    setFilterError(null);
     setResults([]);
+    setRelaxedTo(null);
     setRun(null);
 
     const runScope: RunScope = { role: role.trim(), window: selectedWindow };
@@ -382,13 +438,36 @@ export const DiscoveryView: React.FC = () => {
         <section className="max-w-3xl mx-auto px-6 pb-12">
           <div className="flex items-baseline justify-between gap-4 mb-4 flex-wrap">
             <h3 className="text-lg font-bold" style={{ color: "var(--color-primary)" }}>
-              {results.length} {results.length === 1 ? "match" : "matches"}
+              {filtering ? "Filtering…" : `${results.length} ${results.length === 1 ? "match" : "matches"}`}
             </h3>
             <p className="text-xs" style={{ color: "var(--color-on-surface-variant)" }}>
               {scope.role ? `“${scope.role}”` : "any role"} · posted within{" "}
               {WINDOWS.find((w) => w.value === scope.window)?.label.toLowerCase() ?? scope.window}
             </p>
           </div>
+
+          {filterError && (
+            <p className="text-xs mb-4" style={{ color: "#e11d48" }}>
+              {filterError} — showing the previous results.
+            </p>
+          )}
+
+          {relaxedTo && !filtering && (
+            <div
+              className="rounded-2xl px-4 py-3 mb-4 text-xs flex items-start gap-2 border"
+              style={{
+                background: "var(--color-surface-container-lowest)",
+                borderColor: "var(--color-outline-variant)",
+              }}
+            >
+              <Info className="w-4 h-4 shrink-0 mt-px" style={{ color: "var(--color-primary)" }} />
+              <span style={{ color: "var(--color-on-surface-variant)" }}>
+                Nothing matched <strong>“{scope.role}”</strong> exactly, so these are
+                results for <strong>“{relaxedTo}”</strong>. Drop a word from the role to
+                search wider yourself.
+              </span>
+            </div>
+          )}
 
           {results.length === 0 ? (
             <div
@@ -397,8 +476,10 @@ export const DiscoveryView: React.FC = () => {
             >
               <p className="text-sm font-medium mb-1">No postings matched.</p>
               <p className="text-xs" style={{ color: "var(--color-on-surface-variant)" }}>
-                Try a broader role, or widen the window — companies post unevenly, and a
-                24-hour window over a fixed registry is often genuinely empty.
+                Broader forms of this role were tried too and found nothing, so widen
+                the window or check the location rules in{" "}
+                <code>backend/config/prefilter.yml</code> — a fixed registry over a
+                short window is often genuinely empty.
               </p>
             </div>
           ) : (

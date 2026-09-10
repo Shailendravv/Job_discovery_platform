@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
 from app.api.v1 import postings as postings_api
+from app.ingest.query import RelaxedSearchResult
 
 POSTING_ID = "a" * 64
 
@@ -36,7 +37,11 @@ def client(monkeypatch):
     db = MagicMock()
     db.postings.find_one = AsyncMock(return_value=DOC)
 
-    monkeypatch.setattr(postings_api, "list_postings", AsyncMock(return_value=[DOC]))
+    monkeypatch.setattr(
+        postings_api,
+        "list_postings_relaxed",
+        AsyncMock(return_value=RelaxedSearchResult(postings=[DOC], tokens=[], relaxed=False)),
+    )
     monkeypatch.setattr(
         postings_api,
         "shortlist_postings",

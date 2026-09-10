@@ -287,3 +287,43 @@ async def test_run_prefilter_dry_run_computes_counts_without_writing():
     assert result.passed == 1
     db.postings.bulk_write.assert_not_awaited()
     db.prefilter_runs.insert_one.assert_not_awaited()
+
+
+# ---- reclassify --------------------------------------------------------
+#
+# Editing prefilter.yml used to be inert: run_prefilter only ever read
+# {"prefiltered": False}, so a corrected allowed_locations list changed
+# nothing for the postings already classified under the old one.
+
+@pytest.mark.asyncio
+async def test_run_prefilter_reclassify_reads_every_posting():
+    db = _mock_db([])
+
+    await run_prefilter(db, PrefilterConfig(), reclassify=True)
+
+    db.postings.find.assert_called_once_with({})
+
+
+@pytest.mark.asyncio
+async def test_run_prefilter_reclassify_reverses_a_stale_rejection():
+    """A posting rejected under the old location list must be able to come
+    back as passed once the list is corrected -- otherwise the only way to
+    apply a config change is to wipe the collection."""
+    config = PrefilterConfig(
+        hard_filters=HardFilterConfig(allowed_locations=["gurugram"], remote_ok=True),
+    )
+    stale = _posting(
+        _id="z" * 64,
+        location="Gurugram, India",
+        prefiltered=True,
+        prefilter_status="hard_filter",
+        prefilter_reason="location not allowed: Gurugram, India",
+    )
+    db = _mock_db([stale])
+
+    result = await run_prefilter(db, config, reclassify=True)
+
+    assert result.passed == 1
+    written = _written_sets(db)["z" * 64]
+    assert written["prefilter_status"] == "passed"
+    assert written["prefilter_reason"] is None

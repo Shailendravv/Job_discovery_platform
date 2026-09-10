@@ -75,11 +75,13 @@ location:
   # sample data had scattered across the two config files, plus remote —
   # kept in sync with prefilter.yml's allowed_locations below.
   allowed:
-    - remote
-    - noida
-    - gurugram
-    - greater noida
-    - india
+    - "remote"
+    - "delhi"
+    - "ncr"
+    - "gurugram"
+    - "greater noida"
+    - "gurgaon"
+    - "noida"
   remote_ok: true
   # Worth little on purpose: config/prefilter.yml already rejects
   # disallowed locations outright, so a location that merely passes is

@@ -14,6 +14,7 @@ from app.ingest.query import (
     build_query,
     build_shortlist_match,
     list_postings,
+    list_postings_relaxed,
     next_postings,
     shortlist_postings,
 )
@@ -191,3 +192,98 @@ async def test_shortlist_postings_empty_when_nothing_clears_the_bar():
     db, _ = _mock_aggregate_db([])
     result = await shortlist_postings(db, ShortlistFilter(min_score=10))
     assert result == []
+
+
+# ---- relaxed role search ----------------------------------------------
+
+def test_role_tokens_take_precedence_over_role_query():
+    """The relaxed search walks a ladder of pre-parsed token sets; it must
+    be able to ask for one rung without re-serializing it back into a
+    string and hoping the parser round-trips."""
+    query = build_query(PostingFilter(role_query="ai fullstack developer",
+                                      role_tokens=["developer"]))
+    pattern = query["title_normalized"]["$regex"]
+
+    assert "developer" in pattern
+    assert "fullstack" not in pattern
+
+
+def test_empty_role_tokens_add_no_clause():
+    assert "title_normalized" not in build_query(PostingFilter(role_tokens=[]))
+
+
+def _sequenced_db(results_per_call):
+    """A db whose successive .find() calls return successive result sets --
+    one per rung of the relaxation ladder."""
+    db = MagicMock()
+    db.postings = MagicMock()
+    cursors = []
+    for res in results_per_call:
+        cursor = MagicMock()
+        cursor.sort.return_value = cursor
+        cursor.limit.return_value = cursor
+        cursor.to_list = AsyncMock(return_value=res)
+        cursors.append(cursor)
+    db.postings.find.side_effect = cursors
+    return db
+
+
+@pytest.mark.asyncio
+async def test_relaxed_search_returns_the_strictest_rung_that_matches():
+    """The bug this fixes: "AI full stack developer" matched nothing, so
+    the page showed 0 even though dropping the "ai" qualifier found real
+    full-stack roles."""
+    hits = [{"_id": "a"}, {"_id": "b"}]
+    db = _sequenced_db([[], hits])
+
+    result = await list_postings_relaxed(
+        db, PostingFilter(role_query="AI full stack developer"), limit=200
+    )
+
+    assert result.postings == hits
+    assert result.tokens == ["fullstack", "developer"]
+    assert result.relaxed is True
+    assert db.postings.find.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_relaxed_search_does_not_relax_when_the_exact_query_matches():
+    hits = [{"_id": "a"}]
+    db = _sequenced_db([hits])
+
+    result = await list_postings_relaxed(
+        db, PostingFilter(role_query="AI full stack developer"), limit=200
+    )
+
+    assert result.postings == hits
+    assert result.relaxed is False
+    assert result.tokens == ["ai", "fullstack", "developer"]
+    db.postings.find.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_relaxed_search_reports_empty_without_widening_past_the_last_rung():
+    """A genuinely empty corpus must still come back empty -- relaxation
+    stops at one token, it never degrades into an unfiltered read."""
+    db = _sequenced_db([[], [], []])
+
+    result = await list_postings_relaxed(
+        db, PostingFilter(role_query="AI full stack developer"), limit=200
+    )
+
+    assert result.postings == []
+    assert result.relaxed is False
+    assert db.postings.find.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_relaxed_search_with_no_role_query_is_a_single_plain_read():
+    docs = [{"_id": "a"}]
+    db = _sequenced_db([docs])
+
+    result = await list_postings_relaxed(db, PostingFilter(), limit=200)
+
+    assert result.postings == docs
+    assert result.relaxed is False
+    assert result.tokens == []
+    db.postings.find.assert_called_once()
