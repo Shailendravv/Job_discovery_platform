@@ -59,6 +59,12 @@ export interface PostingFilterParams {
   since_days?: number;
   provider?: string | null;
   org?: string | null;
+  // Job Discovery filters. `q` is a deterministic role match against the
+  // posting title; `posted_within` ("24h" | "48h" | "7d") bounds when the
+  // job was *posted*, which is a different question from `since_days`
+  // (when we first saw it).
+  q?: string | null;
+  posted_within?: string | null;
 }
 
 export interface ActiveResumeInfo {
@@ -91,6 +97,48 @@ export interface PostingDetail extends Posting {
 export interface IngestTriggerResponse {
   run_id: string;
   status: string;
+}
+
+// How a discovery session is scoped. All optional — an empty body starts a
+// full, unscoped run, which is what the nightly loop does.
+export interface IngestTriggerParams {
+  role?: string | null;
+  window?: string | null;
+  source?: string | null;
+  org?: string | null;
+}
+
+// One timed stage of a run. `count` is stage-specific (sources fetched,
+// postings normalized, postings written...).
+export interface IngestStage {
+  name: string;
+  duration_ms: number;
+  count: number;
+}
+
+export type IngestRunState = "running" | "completed" | "failed";
+
+// GET /api/v1/postings/ingest/{run_id} — the run document is written when
+// the run starts and updated as each stage lands, so this is meaningful
+// while the run is still going.
+export interface IngestRunStatus {
+  run_id: string;
+  status: IngestRunState;
+  started_at?: string | null;
+  finished_at?: string | null;
+  elapsed_ms: number;
+  role?: string | null;
+  window?: string | null;
+  stages: IngestStage[];
+  sources_total: number;
+  sources_ok: number;
+  sources_error: number;
+  postings_fetched: number;
+  postings_normalized: number;
+  postings_fresh: number;
+  inserted: number;
+  updated: number;
+  error?: string | null;
 }
 
 export interface ShortlistEntry {

@@ -1,6 +1,7 @@
 """jobctl entry point (PLAN.md §3). Milestone 1 + 2 + 4 commands:
 
-    jobctl ingest [--source X] [--org X] [--dry-run] [--json]
+    jobctl ingest [--source X] [--org X] [--role X] [--since 24h]
+                  [--dry-run] [--json]
     jobctl sources list [--json]
     jobctl sources doctor [--json]
     jobctl stats [--json]
@@ -12,6 +13,11 @@
     jobctl profile add <file> --as resume [--json]
     jobctl profile show [--json]
     jobctl shortlist [--min-score 7] [--since 7d] [--limit 50] [--json]
+    jobctl score run [--dry-run] [--limit N] [--json]
+
+Every command above is deterministic -- none of them calls an LLM. Judging
+is the one stage that can need a model, and ``score run`` narrows even that
+to the ambiguous band (see app/ingest/scoring.py).
 
 Later milestones add ``mark``, ``tailor``, ``cover``, ``digest``.
 """
@@ -26,6 +32,7 @@ from typing import Optional
 import typer
 from pydantic import ValidationError
 
+from app.core.config import settings
 from app.ingest.doctor import run_doctor, summarize
 from app.ingest.format import render_posting_md, render_posting_summary, render_shortlist_entry
 from app.ingest.ids import assign_short_ids, resolve_posting_id, short_id
@@ -50,17 +57,32 @@ from app.ingest.query import (
 )
 from app.ingest.registry import load_and_resolve_sources
 from app.ingest.runner import run_ingest
+from app.ingest.scoring import (
+    SCORING_CONFIG_PATH,
+    load_scoring_config,
+    run_scoring,
+    score_posting,
+)
 from app.ingest.time_util import parse_duration
 from app.ingest.verdicts import Verdict, apply_verdicts
 from jobctl.db import db_session
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# The pipeline logs its stage timings and per-source durations at INFO. This
+# used to be hardcoded to WARNING, which silently swallowed all of it (and
+# the smartrecruiters cap notice, and _http retry backoff) whenever the
+# pipeline was run from the CLI rather than the API.
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 app = typer.Typer(add_completion=False, help="ATS ingestion + judging pipeline CLI (PLAN.md).")
 sources_app = typer.Typer(add_completion=False, help="Inspect the ATS company registry.")
 app.add_typer(sources_app, name="sources")
 prefilter_app = typer.Typer(add_completion=False, help="Rule-based prefilter between ingest and next (PLAN.md §4).")
 app.add_typer(prefilter_app, name="prefilter")
+scoring_app = typer.Typer(add_completion=False, help="Deterministic scoring: auto-decide the clear-cut verdicts.")
+app.add_typer(scoring_app, name="score")
 profile_app = typer.Typer(add_completion=False, help="The profile/ store the judging agent reads directly (PLAN.md §3).")
 app.add_typer(profile_app, name="profile")
 
@@ -83,17 +105,41 @@ def _print_human(data: dict) -> None:
 def ingest(
     source: Optional[str] = typer.Option(None, "--source", help="Only this provider id (e.g. greenhouse)."),
     org: Optional[str] = typer.Option(None, "--org", help="Only this company (matches org slug or name)."),
+    role: Optional[str] = typer.Option(
+        None, "--role",
+        help="Record a role on the run and report how many postings match it.",
+    ),
+    since: Optional[str] = typer.Option(
+        None, "--since",
+        help=(
+            "Freshness window, e.g. 24h/48h/7d. Lets the two providers that pay "
+            "a per-job description fetch skip stale postings before spending it. "
+            "Unset (the default) fetches everything, as the nightly run should."
+        ),
+    ),
     all_: bool = typer.Option(True, "--all/--no-all", help="Ingest the full registry (default)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Fetch + normalize + dedupe, skip the DB write."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show INFO logs, including stage timings."),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
     """Fetch postings from ATS providers, normalize, dedupe, and upsert into
     the ``postings`` collection. Idempotent — a second run should insert ~0
     new rows (PLAN.md §2 acceptance criteria)."""
+    if verbose:
+        logging.getLogger().setLevel(logging.INFO)
+
+    try:
+        window = parse_duration(since) if since else None
+    except ValueError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
 
     async def _run():
         async with db_session() as db:
-            return await run_ingest(db, source_filter=source, org_filter=org, dry_run=dry_run)
+            return await run_ingest(
+                db, source_filter=source, org_filter=org, dry_run=dry_run,
+                role=role, window=window, window_label=since,
+            )
 
     result = asyncio.run(_run())
     data = result.to_dict()
@@ -103,11 +149,27 @@ def ingest(
         return
 
     typer.echo(f"run_id: {data['run_id']}{'  (dry-run)' if dry_run else ''}")
+    if role or since:
+        typer.echo(f"scope: role={role or 'any'}, window={since or 'all time'}")
     typer.echo(f"sources: {data['sources_total']} total, {data['sources_ok']} ok, "
                f"{data['sources_error']} errored, {data['sources_skipped']} skipped")
     typer.echo(f"postings: {data['postings_fetched']} fetched, {data['postings_normalized']} normalized, "
                f"{data['duplicates_marked']} marked as near-duplicates")
+    if since:
+        typer.echo(f"fresh: {data['postings_fresh']} posted within {since}")
     typer.echo(f"store: {data['inserted']} inserted, {data['updated']} updated")
+
+    if data.get("stages"):
+        typer.echo("\ntiming:")
+        for stage in data["stages"]:
+            typer.echo(f"  {stage['name']:<14} {stage['duration_ms']:>10.1f} ms   ({stage['count']} items)")
+
+    slowest = sorted(data["outcomes"], key=lambda o: o.get("duration_ms") or 0, reverse=True)[:5]
+    if slowest and any(o.get("duration_ms") for o in slowest):
+        typer.echo("\nslowest sources:")
+        for o in slowest:
+            typer.echo(f"  {o['name']} ({o['provider']}): {o.get('duration_ms', 0):.0f} ms, "
+                       f"{o['jobs_fetched']} fetched")
 
     errors = [o for o in data["outcomes"] if o["status"] == "error"]
     if errors:
@@ -205,6 +267,93 @@ def prefilter_run(
     if data["input"]:
         rejected = data["input"] - data["passed"]
         typer.echo(f"dropped: {rejected / data['input']:.0%}")
+
+
+@scoring_app.command("run")
+def scoring_run(
+    limit: Optional[int] = typer.Option(None, "--limit", help="Only score this many postings."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Show the band split without writing scores or verdicts -- use this after editing scoring.yml.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show INFO logs."),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Score every unjudged, prefiltered posting and auto-write the clear-cut
+    verdicts, leaving only the ambiguous band for a Claude Code session.
+
+    Runs automatically at the end of every `jobctl ingest`; this command is
+    for re-running it after a scoring.yml edit, or for draining a backlog.
+    Nothing here calls an LLM."""
+    if verbose:
+        logging.getLogger().setLevel(logging.INFO)
+
+    try:
+        config = load_scoring_config(SCORING_CONFIG_PATH)
+    except FileNotFoundError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    async def _run():
+        async with db_session() as db:
+            return await run_scoring(db, config, limit=limit, dry_run=dry_run)
+
+    result = asyncio.run(_run())
+    data = result.to_dict()
+
+    if json_out:
+        typer.echo(jsonlib.dumps(data, indent=2, default=str))
+        return
+
+    typer.echo(f"scored: {data['input']}{'  (dry-run)' if dry_run else ''} in {data['duration_ms']:.0f} ms")
+    typer.echo(f"auto-applied: {data['auto_applied']}   auto-skipped: {data['auto_skipped']}")
+    typer.echo(f"left for the judging agent: {data['needs_review']}")
+    if data["input"]:
+        decided = data["auto_applied"] + data["auto_skipped"]
+        typer.echo(f"decided without an LLM: {decided / data['input']:.0%}")
+    if data["verdicts_rejected"]:
+        typer.echo(f"verdicts rejected: {data['verdicts_rejected']}", err=True)
+
+
+@scoring_app.command("show")
+def scoring_show(
+    id: str = typer.Argument(..., help="Full posting id or an unambiguous prefix."),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Explain one posting's deterministic score and which band it fell in."""
+    try:
+        config = load_scoring_config(SCORING_CONFIG_PATH)
+    except FileNotFoundError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1)
+
+    async def _run() -> tuple[Optional[dict], Optional[str]]:
+        async with db_session() as db:
+            return await resolve_posting_id(db, id)
+
+    doc, error = asyncio.run(_run())
+    if error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(1)
+
+    # Recomputed rather than read back from the document, so this always
+    # explains the *current* scoring.yml -- which is what you want when you
+    # are tuning it.
+    scored = score_posting(doc, config)
+    data = {"id": short_id(doc["_id"]), "title": doc.get("title"), **scored.to_dict()}
+
+    if json_out:
+        typer.echo(jsonlib.dumps(data, indent=2, default=str))
+        return
+
+    typer.echo(f"[{data['id']}] {data['title']} \u2014 {doc.get('company_name')}")
+    typer.echo(f"score: {scored.score}/10   band: {scored.band}")
+    if scored.band == "needs_review":
+        typer.echo("  (between the bands \u2014 this one goes to the judging agent)")
+    for reason in scored.reasons:
+        typer.echo(f"  + {reason}")
+    for concern in scored.concerns:
+        typer.echo(f"  - {concern}")
 
 
 @prefilter_app.command("show")

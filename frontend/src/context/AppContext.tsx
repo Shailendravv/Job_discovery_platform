@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import type { Posting, PaginationMeta } from "@/types";
+import type { Posting, PaginationMeta, IngestTriggerParams } from "@/types";
 import { api, ApiError } from "@/services/api";
 
 type SortField = "posted_at" | "first_seen_at" | "title" | "company_name";
@@ -21,8 +21,8 @@ interface AppContextProps {
   loading: boolean;
   error: string | null;
   lastIngestRunId: string | null;
-  activeTab: "Dashboard" | "Resumes" | "Applications";
-  setActiveTab: (tab: "Dashboard" | "Resumes" | "Applications") => void;
+  activeTab: "Dashboard" | "Discovery" | "Resumes" | "Applications";
+  setActiveTab: (tab: "Dashboard" | "Discovery" | "Resumes" | "Applications") => void;
   setPage: (page: number) => void;
   setLimit: (limit: number) => void;
   setSearchQuery: (q: string) => void;
@@ -32,13 +32,14 @@ interface AppContextProps {
   setSortOptions: (sort_by: SortField, sort_order: SortOrder) => void;
   resetFilters: () => void;
   refreshJobs: () => Promise<void>;
-  triggerIngest: () => Promise<string>;
+  triggerIngest: (params?: IngestTriggerParams) => Promise<string>;
 }
 
 const AppContext = createContext<AppContextProps | undefined>(undefined);
 
 export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeTab, setActiveTab] = useState<"Dashboard" | "Resumes" | "Applications">("Dashboard");
+  const [activeTab, setActiveTab] =
+    useState<"Dashboard" | "Discovery" | "Resumes" | "Applications">("Dashboard");
 
   // The full "200 latest" set, fetched once and refreshed on demand —
   // GET /api/v1/postings has no server-side pagination/full-text search,
@@ -86,11 +87,14 @@ export const AppContextProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     };
   }, [fetchJobs]);
 
-  const triggerIngest = useCallback(async (): Promise<string> => {
-    const result = await api.triggerIngest();
-    setLastIngestRunId(result.run_id);
-    return result.run_id;
-  }, []);
+  const triggerIngest = useCallback(
+    async (params: IngestTriggerParams = {}): Promise<string> => {
+      const result = await api.triggerIngest(params);
+      setLastIngestRunId(result.run_id);
+      return result.run_id;
+    },
+    [],
+  );
 
   // ── Client-side filter → sort → paginate over allPostings ──
   const filtered = useMemo(() => {

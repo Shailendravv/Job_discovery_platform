@@ -3,7 +3,9 @@ import type {
   PostingFilterParams,
   PostingListResponse,
   PostingDetail,
+  IngestTriggerParams,
   IngestTriggerResponse,
+  IngestRunStatus,
   ShortlistResponse,
   ResumeUploadResponse,
   ResumeTailorRequest,
@@ -78,6 +80,8 @@ export const api = {
       query.append("since_days", params.since_days.toString());
     if (params.provider) query.append("provider", params.provider);
     if (params.org) query.append("org", params.org);
+    if (params.q) query.append("q", params.q);
+    if (params.posted_within) query.append("posted_within", params.posted_within);
 
     const queryString = query.toString();
     const endpoint = `/api/v1/postings${queryString ? `?${queryString}` : ""}`;
@@ -92,12 +96,22 @@ export const api = {
     return request<ShortlistResponse>("/api/v1/postings/shortlist");
   },
 
-  // POST /api/v1/postings/ingest — starts a background ATS ingest run
-  // (same work as `jobctl ingest`) and returns immediately with a run id.
-  triggerIngest: async (): Promise<IngestTriggerResponse> => {
+  // POST /api/v1/postings/ingest — starts a background discovery run (same
+  // work as `jobctl ingest`) and returns immediately with a run id. Poll
+  // getIngestRun() for progress; the run itself can take minutes.
+  triggerIngest: async (
+    params: IngestTriggerParams = {},
+  ): Promise<IngestTriggerResponse> => {
     return request<IngestTriggerResponse>("/api/v1/postings/ingest", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
     });
+  },
+
+  // GET /api/v1/postings/ingest/{run_id} — live stage timings for a run.
+  getIngestRun: async (runId: string): Promise<IngestRunStatus> => {
+    return request<IngestRunStatus>(`/api/v1/postings/ingest/${runId}`);
   },
 
   uploadResume: async (file: File): Promise<ResumeUploadResponse> => {

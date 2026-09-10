@@ -112,7 +112,13 @@ class AtsProvider(ABC):
     # is reported by the ingest runner as "not_ingestable" rather than
     # crashing the run — see runner.py's ``_fetch_source()``.
 
-    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+    async def fetch_postings(
+        self,
+        company: dict,
+        api_url: str,
+        *,
+        posted_since: Optional[datetime] = None,
+    ) -> list[RawPosting]:
         """Fetch jobs with full fidelity for the ingestion store.
 
         Unlike ``fetch()``, this must include a stable ``provider_job_id``,
@@ -125,6 +131,25 @@ class AtsProvider(ABC):
             Company config entry.
         api_url : str
             The API URL returned by ``detect()``.
+        posted_since : datetime, optional
+            Freshness cutoff for a Job Discovery session (``None``, the
+            default, means "everything" — the behaviour every caller had
+            before this parameter existed, and what the nightly full ingest
+            still uses).
+
+            Only the two providers that pay a **second HTTP call per job**
+            for the description — smartrecruiters and workday — act on it,
+            and they do so *before* that call, which is the point: skipping
+            the detail fetch for a posting that cannot make the window is
+            the largest time saving available to a discovery run. The other
+            five return descriptions in one bulk response, so there is
+            nothing to save and they deliberately ignore this; the ingest
+            layer filters them by date later instead, which keeps the stored
+            corpus (and ``last_seen_at``) complete.
+
+            Consequence worth knowing: for smartrecruiters/workday a posting
+            older than the cutoff is not returned at all, so its
+            ``last_seen_at`` stops refreshing on scoped runs.
 
         Returns
         -------

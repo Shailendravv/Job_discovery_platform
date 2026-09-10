@@ -173,20 +173,50 @@ class SmartRecruitersProvider(AtsProvider):
             })
         return results
 
-    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+    async def fetch_postings(
+        self,
+        company: dict,
+        api_url: str,
+        *,
+        posted_since: Optional[datetime] = None,
+    ) -> list[RawPosting]:
         _assert_safe_url(api_url)
         identifier = _identifier(company) or ""
         summaries = await _fetch_all_summaries(api_url)
         summaries = [s for s in summaries if isinstance(s, dict) and s.get("id")]
 
-        # Newest first, then cap — see MAX_DESCRIPTION_FETCHES.
+        # Newest first, then drop the stale ones, then cap. Order matters:
+        # ``releasedDate`` is already on the summary, so a posting outside the
+        # discovery window can be discarded *before* it costs a detail fetch.
+        # That check has to run before MAX_DESCRIPTION_FETCHES too, otherwise
+        # the cap would spend its budget on postings the window rejects.
         summaries.sort(key=lambda s: s.get("releasedDate") or "", reverse=True)
         total_found = len(summaries)
+
+        skipped_stale = 0
+        if posted_since is not None:
+            fresh = []
+            for summary in summaries:
+                released = _to_epoch_dt(summary.get("releasedDate"))
+                # No parseable date means we cannot prove it is stale, so it
+                # stays: the ingest layer decides with the first_seen_at
+                # fallback rather than us silently dropping it here.
+                if released is None or released >= posted_since:
+                    fresh.append(summary)
+            skipped_stale = len(summaries) - len(fresh)
+            summaries = fresh
+            if skipped_stale:
+                log.info(
+                    "[smartrecruiters] %s: skipping %d of %d description fetches — "
+                    "released before %s",
+                    company.get("name"), skipped_stale, total_found, posted_since.isoformat(),
+                )
+
         summaries = summaries[:MAX_DESCRIPTION_FETCHES]
-        if total_found > MAX_DESCRIPTION_FETCHES:
+        if total_found - skipped_stale > MAX_DESCRIPTION_FETCHES:
             log.info(
                 "[smartrecruiters] %s: capping description fetch to %d most-recent of %d postings",
-                company.get("name"), MAX_DESCRIPTION_FETCHES, total_found,
+                company.get("name"), MAX_DESCRIPTION_FETCHES, total_found - skipped_stale,
             )
 
         details = await asyncio.gather(*(_fetch_detail(api_url, str(s["id"])) for s in summaries))

@@ -66,7 +66,69 @@ class ShortlistResponse(BaseModel):
     entries: List[ShortlistEntry]
 
 
+class IngestTriggerRequest(BaseModel):
+    """POST /api/v1/postings/ingest — how a Job Discovery session is scoped.
+
+    Every field is optional and the body itself is optional, so the
+    unparameterised `POST /ingest` that predates the Discovery search still
+    starts a full, unscoped run.
+    """
+
+    role: Optional[str] = Field(
+        None,
+        description=(
+            "Free-text role, e.g. 'backend engineer'. Recorded on the run and "
+            "used to filter the results read; no ATS API in the registry "
+            "supports a server-side keyword filter, so it cannot narrow the "
+            "fetch itself."
+        ),
+    )
+    window: Optional[str] = Field(
+        None,
+        description=(
+            "Freshness window, e.g. '24h', '48h', '7d'. Defaults to "
+            "settings.DISCOVERY_WINDOW. Providers that pay a per-job "
+            "description fetch use it to skip stale postings before spending "
+            "that call."
+        ),
+    )
+    source: Optional[str] = Field(None, description="Only this provider id, e.g. 'greenhouse'.")
+    org: Optional[str] = Field(None, description="Only this company (org slug or name).")
+
+
 class IngestTriggerResponse(BaseModel):
     """POST /api/v1/ingest — the run has been started in the background."""
     run_id: str
     status: str = "started"
+
+
+class IngestStage(BaseModel):
+    """One timed stage of a run — how long it took and how much it handled."""
+    name: str
+    duration_ms: float
+    count: int = 0
+
+
+class IngestRunStatus(BaseModel):
+    """GET /api/v1/postings/ingest/{run_id} — live progress for the Discovery
+    page. The run document is written when the run *starts* and updated as
+    each stage lands, so this is meaningful while the run is still going."""
+
+    run_id: str
+    status: str  # "running" | "completed" | "failed"
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    elapsed_ms: float = 0.0
+    role: Optional[str] = None
+    window: Optional[str] = None
+    stages: List[IngestStage] = Field(default_factory=list)
+
+    sources_total: int = 0
+    sources_ok: int = 0
+    sources_error: int = 0
+    postings_fetched: int = 0
+    postings_normalized: int = 0
+    postings_fresh: int = 0
+    inserted: int = 0
+    updated: int = 0
+    error: Optional[str] = None

@@ -31,16 +31,17 @@ hard_filters:
   # remote and remote_ok is true.
   allowed_locations:
     - "remote"
-    - "bangalore"
-    - "bengaluru"
-    - "hyderabad"
-    - "pune"
+    - "noida"
+    - "gurugram"
+    - "greater noida"
     - "india"
   remote_ok: true
 
   # Ceiling on years of experience mentioned in the description. A posting
   # asking for more than this is rejected. Leave unset (null) for no cap.
-  max_years_experience: 3
+  # 4+ years actual, targeting Lead-level postings which commonly ask for
+  # 5-6 -- raised from the 3yr sample ceiling so those aren't hard-rejected.
+  max_years_experience: 6
 
   # Case-insensitive substring match against title + description. Any hit
   # rejects the posting — for requirements you flatly cannot meet.
@@ -51,18 +52,27 @@ hard_filters:
 
 keyword_floor:
   # A posting must mention at least `min_matches` of these (case-insensitive,
-  # counted across title + description) to clear this stage.
+  # counted across title + description) to clear this stage. Matches the
+  # resume's actual stack (backend/config/resume.txt.txt): React/Next.js
+  # frontend, Node/FastAPI backend, Mongo/Postgres data layer, plus the
+  # GenAI/agentic tooling that's a big share of the recent project history.
   skills:
-    - "python"
-    - "fastapi"
     - "react"
+    - "next.js"
+    - "react native"
+    - "node"
+    - "express"
+    - "fastapi"
+    - "python"
     - "typescript"
+    - "javascript"
     - "mongodb"
+    - "postgresql"
     - "docker"
     - "aws"
-    - "sql"
-    - "node"
-    - "django"
+    - "langchain"
+    - "openai"
+    - "redux"
   min_matches: 2
 
 embedding:

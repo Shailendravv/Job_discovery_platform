@@ -20,6 +20,7 @@ against the live registry.
 import logging
 import os
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
@@ -27,6 +28,8 @@ from typing import Optional
 import yaml
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, Field
+from pymongo import UpdateOne
+from pymongo.errors import BulkWriteError
 
 log = logging.getLogger(__name__)
 
@@ -181,6 +184,7 @@ class PrefilterRunResult:
     embedding_rejected: int = 0
     embedding_skipped: int = 0
     passed: int = 0
+    duration_ms: float = 0.0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -199,12 +203,15 @@ async def run_prefilter(
     §4: "Log counts at each stage so I can see where postings die").
     ``dry_run=True`` computes the same counts without writing anything —
     for previewing the effect of an edited ``prefilter.yml``."""
+    started = time.perf_counter()
+
     cursor = db.postings.find({"prefiltered": False})
     if limit is not None:
         cursor = cursor.limit(limit)
     docs = await cursor.to_list(length=limit)
 
     result = PrefilterRunResult(input=len(docs))
+    operations: list[UpdateOne] = []
 
     for doc in docs:
         reason = hard_filter_reject(doc, config.hard_filters)
@@ -226,19 +233,44 @@ async def run_prefilter(
             status, status_reason = "passed", None
 
         if not dry_run:
-            await db.postings.update_one(
+            operations.append(UpdateOne(
                 {"_id": doc["_id"]},
                 {"$set": {
                     "prefiltered": True,
                     "prefilter_status": status,
                     "prefilter_reason": status_reason,
                 }},
+            ))
+
+    if not dry_run and operations:
+        # One round trip instead of one per posting. At the registry's real
+        # volume (thousands of unclassified postings after an ingest) the
+        # await-per-document loop this replaces was the whole cost of the
+        # stage. Unordered + partial-failure recovery follows store.py:
+        # a single document that trips the collection validator must not
+        # discard the classifications that did land.
+        try:
+            await db.postings.bulk_write(operations, ordered=False)
+        except BulkWriteError as e:
+            write_errors = (e.details or {}).get("writeErrors", [])
+            log.error(
+                "[prefilter] bulk_write had %d error(s) out of %d ops -- "
+                "the remaining classifications were still applied",
+                len(write_errors), len(operations),
             )
+
+    result.duration_ms = round((time.perf_counter() - started) * 1000.0, 1)
 
     if not dry_run:
         await db.prefilter_runs.insert_one({
             "run_at": datetime.now(timezone.utc),
             **result.to_dict(),
         })
+
+    log.info(
+        "[prefilter] %d classified -- %d passed, %d hard-filtered, %d below keyword floor (%.0fms)",
+        result.input, result.passed, result.hard_filter_rejected,
+        result.keyword_floor_rejected, result.duration_ms,
+    )
 
     return result

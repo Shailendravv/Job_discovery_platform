@@ -170,16 +170,46 @@ class WorkdayProvider(AtsProvider):
         log.info("[workday] fetched %d jobs for %s", len(all_jobs), company.get("name"))
         return all_jobs
 
-    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+    async def fetch_postings(
+        self,
+        company: dict,
+        api_url: str,
+        *,
+        posted_since: Optional[datetime] = None,
+    ) -> list[RawPosting]:
         ep = _resolve_endpoint(company)
         if not ep:
             return []
 
         raw_jobs = await _fetch_raw_postings(ep)
 
-        # Newest first (unparseable/unbounded dates sort last), then cap —
-        # see MAX_DESCRIPTION_FETCHES.
+        # Newest first (unparseable/unbounded dates sort last), then drop the
+        # stale ones, then cap. ``postedOn`` rides along on the *list*
+        # response, so a posting outside the discovery window can be
+        # discarded before it costs a detail fetch — and that has to happen
+        # before MAX_DESCRIPTION_FETCHES so the cap isn't spent on postings
+        # the window rejects.
         raw_jobs.sort(key=lambda j: _parse_posted_on(j.get("postedOn")) or -1, reverse=True)
+
+        if posted_since is not None:
+            total_found = len(raw_jobs)
+            # ``postedOn`` is a relative English label with day granularity
+            # ("Posted Today", "Posted 5 Days Ago") and is None for
+            # "Posted 30+ Days Ago". None means we cannot prove staleness, so
+            # it stays and the ingest layer decides via first_seen_at.
+            fresh = [
+                j for j in raw_jobs
+                if (_parse_posted_on_dt(j.get("postedOn")) or posted_since) >= posted_since
+            ]
+            skipped_stale = total_found - len(fresh)
+            raw_jobs = fresh
+            if skipped_stale:
+                log.info(
+                    "[workday] %s: skipping %d of %d description fetches — "
+                    "posted before %s",
+                    company.get("name"), skipped_stale, total_found, posted_since.isoformat(),
+                )
+
         truncated = len(raw_jobs) > MAX_DESCRIPTION_FETCHES
         raw_jobs = raw_jobs[:MAX_DESCRIPTION_FETCHES]
         if truncated:

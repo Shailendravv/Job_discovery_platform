@@ -17,7 +17,8 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 - **Job data:** the ATS ingest pipeline (`backend/app/ingest/`, driven by `jobctl ingest` or `POST /api/v1/postings/ingest`) — fetches from 7 ATS connectors (`backend/app/agents/ats_providers/`) for the companies in `config/ats_companies.yml`, normalizes, dedupes, and prefilters into the `postings` collection. There is no live-scrape search path; the frontend only ever reads what's already in the database.
 - **Frontend:** React 19 + TypeScript + Vite 8 + Tailwind CSS v4. Entry: `frontend/src/main.tsx`
 - **LLM:** Default chain — Claude (Haiku) via the local **Claude Code CLI** (subscription-billed, `app/services/llm/claude_code_provider.py`) first, falling back to local Ollama (`app/services/llm/claude_fallback_provider.py`) if the CLI call fails. A metered-API chain (`claude-haiku-4-5` via `ANTHROPIC_API_KEY`) is still available. Used for resume tailoring / cover letters, not for discovery. `LLM_PROVIDER` env var: `claude-code` (default, CLI + Ollama fallback), `claude-code-only`, `claude` (API + Ollama fallback), `claude-only`, or `ollama`. See `backend/docs/llm.md`.
-- **Judging:** not an API call — `jobctl next` hands unjudged postings to a Claude Code session (this CLI), which writes `verdicts.json` back via `jobctl judge --apply`. See "Judging pipeline" below.
+- **Job Discovery:** the frontend's Discovery page searches a **role** and a **freshness window** (default last 24h). `POST /api/v1/postings/ingest {role, window}` backgrounds a run; `GET /api/v1/postings/ingest/{run_id}` reports live per-stage timings; `GET /api/v1/postings?q=…&posted_within=…` reads the matches. All deterministic — no LLM anywhere on this path. See `backend/docs/discovery.md`.
+- **Judging:** mostly *not* an LLM anymore. `app/ingest/scoring.py` scores every prefiltered posting by rules and auto-writes the clear-cut `apply`/`skip` verdicts (`judged_by="deterministic"`); only the ambiguous middle band is left unjudged, and `jobctl next` hands *that* to a Claude Code session, which writes `verdicts.json` back via `jobctl judge --apply`. See `backend/docs/scoring.md` and "Judging pipeline" below.
 - **Config:** `backend/app/core/config.py` — Pydantic Settings from `.env` or OS env vars
 
 ## Key commands
@@ -29,8 +30,11 @@ cd frontend && npm install && npm run dev                   # UI on :5173
 | `npm run lint` | frontend/ | ESLint |
 | `pytest tests/` | backend/ | Unit tests |
 | `pip install -e .` | backend/ | Installs the `jobctl` CLI (ATS ingestion — see `backend/docs/ingest.md`) |
-| `jobctl ingest [--source X] [--org X] [--dry-run]` | backend/ | Fetch, normalize, dedupe, upsert postings from `config/ats_companies.yml`; runs the prefilter automatically afterward |
-| `POST /api/v1/postings/ingest` | backend API | Same as `jobctl ingest`, triggered from the frontend's Discovery page; runs as a background task and returns a run id immediately |
+| `jobctl ingest [--source X] [--org X] [--role X] [--since 24h] [-v] [--dry-run]` | backend/ | Fetch, normalize, dedupe, upsert postings from `config/ats_companies.yml`; runs the prefilter and deterministic scoring automatically afterward. `--since` lets smartrecruiters/workday skip per-job description fetches for stale postings (measured: 949 of 968 skipped on a 24h run). `-v` shows stage timings. |
+| `POST /api/v1/postings/ingest` | backend API | Same as `jobctl ingest`, triggered from the frontend's Discovery page. Optional body `{role, window, source, org}`; no body = full unscoped run. Backgrounded, returns a run id immediately |
+| `GET /api/v1/postings/ingest/{run_id}` | backend API | Live run status + per-stage timings; what the Discovery page polls |
+| `jobctl score run [--dry-run] [--json]` | backend/ | Deterministic scoring — auto-decides the clear-cut verdicts so Claude Code only sees the ambiguous band (`config/scoring.yml`) |
+| `jobctl score show <id>` | backend/ | Explain one posting's score and band against the current `scoring.yml` |
 | `jobctl sources doctor` | backend/ | Live-probe every registry entry; reports 0-job/errored/dead tokens |
 | `jobctl prefilter run \| show <id>` | backend/ | Rule-based reject before judging (`config/prefilter.yml`) — see `backend/docs/prefilter.md` |
 | `jobctl profile add <file> --as resume` | backend/ | Extract text (no LLM) into `profile/resume.md` |
@@ -108,6 +112,11 @@ read the profile files above → loop `jobctl next --limit 25 --format md` →
 judge each batch → `jobctl judge --apply` → until `next` returns empty →
 `jobctl shortlist --min-score 7 --since 24h` → summarize counts.
 
+`jobctl ingest` now runs deterministic scoring at the end, so `jobctl next`
+returns only the postings the rules could **not** decide. The loop shape is
+unchanged; it just has less to judge. Verdicts written by the scorer carry
+`judged_by="deterministic"` rather than `"claude-code"`.
+
 **`.claude/commands/*.md` are not committed to this repo** — `.claude/` is
 entirely gitignored here (settings.json, skills/ are local-only too). This
 section is the durable, committed source of truth for the sequence; a
@@ -160,7 +169,8 @@ this), `backend/docs/ingest.md` (ATS connectors, source registry).
 - [ ] `INDEX.md` updated if doc set changed
 
 ## Testing quirks
-- `tests/ingest/` has the real coverage — 141 tests for the ATS providers, normalize/dedupe/store, prefilter, and the ingest runner
+- `tests/ingest/` has the real coverage — 207 tests for the ATS providers, normalize/dedupe/store, prefilter, freshness, role matching, scoring, and the ingest runner; `tests/api/` covers the postings + discovery contract (243 total)
+- `tests/ingest/test_workday_fetch_postings.py` is **flaky** (~1 in 3 full-suite runs, ordering-dependent, pre-existing — `document/cleaned_repo_07_09_2026.md` §9). It passes in isolation; don't attribute a failure there to your change without checking
 - Resume endpoints have no dedicated tests
 
 ## Secrets & env vars
@@ -171,6 +181,7 @@ this), `backend/docs/ingest.md` (ATS connectors, source registry).
   2. `~/.jobsphere/secrets.env` (outside workspace — invisible to assistants)
   3. Interactive `read -s` prompt at startup if still missing (skipped non-interactively — falls back to Ollama)
 - To pre-configure secrets without prompts: `mkdir -p ~/.jobsphere` and create `secrets.env` with `export ANTHROPIC_API_KEY=...`
+- `DISCOVERY_WINDOW` (default `"24h"`) sets the default freshness window for a discovery run; any `parse_duration` string works (`24h`, `48h`, `7d`)
 - Frontend needs `VITE_API_URL=http://localhost:8000` in `frontend/.env`
 - `.gitignore` blocks `.env`, `.env.*`, and `secrets*` patterns (but allows `.env.example`)
 

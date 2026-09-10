@@ -46,6 +46,56 @@ def test_since_produces_a_gte_window():
     assert query["first_seen_at"] == {"$gte": NOW - timedelta(hours=24)}
 
 
+# ---- Job Discovery filters --------------------------------------------
+
+def test_posted_since_matches_posted_at_or_falls_back_to_first_seen_at():
+    """store.py drops None values, so a posting whose provider gave no date
+    has no posted_at *field*. Mongo's {"posted_at": None} matches both
+    missing and explicitly-null, which is exactly the fallback wanted."""
+    query = build_query(PostingFilter(posted_since=timedelta(hours=24)), now=NOW)
+    cutoff = NOW - timedelta(hours=24)
+
+    assert query["$or"] == [
+        {"posted_at": {"$gte": cutoff}},
+        {"posted_at": None, "first_seen_at": {"$gte": cutoff}},
+    ]
+
+
+def test_posted_since_is_independent_of_since():
+    """They answer different questions -- when it was *posted* vs when we
+    first *saw* it -- and the Discovery read sends both."""
+    query = build_query(
+        PostingFilter(since=timedelta(days=14), posted_since=timedelta(hours=24)), now=NOW
+    )
+
+    assert query["first_seen_at"] == {"$gte": NOW - timedelta(days=14)}
+    assert query["$or"][0]["posted_at"] == {"$gte": NOW - timedelta(hours=24)}
+
+
+def test_no_posted_since_leaves_the_query_untouched():
+    """The Dashboard read must keep its existing behaviour."""
+    assert "$or" not in build_query(PostingFilter(since=timedelta(days=14)), now=NOW)
+
+
+def test_role_query_becomes_a_title_regex():
+    query = build_query(PostingFilter(role_query="backend engineer"))
+    pattern = query["title_normalized"]["$regex"]
+
+    assert "backend" in pattern
+    assert "engineer" in pattern
+    # title_normalized is already lowercase, so no case-insensitivity flag --
+    # and a regex without it can use the index migration 016 adds.
+    assert "$options" not in query["title_normalized"]
+
+
+def test_empty_role_query_adds_no_clause():
+    """"No role filter" must not become "match nothing" -- that is the
+    difference between showing everything and showing zero results."""
+    assert "title_normalized" not in build_query(PostingFilter(role_query=""))
+    assert "title_normalized" not in build_query(PostingFilter(role_query="the a of"))
+    assert "title_normalized" not in build_query(PostingFilter(role_query=None))
+
+
 def _mock_db(find_results):
     db = MagicMock()
     db.postings = MagicMock()

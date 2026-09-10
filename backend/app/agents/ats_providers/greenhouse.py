@@ -134,7 +134,18 @@ class GreenhouseProvider(AtsProvider):
             })
         return results
 
-    async def fetch_postings(self, company: dict, api_url: str) -> list[RawPosting]:
+    async def fetch_postings(
+        self,
+        company: dict,
+        api_url: str,
+        *,
+        posted_since: Optional[datetime] = None,
+    ) -> list[RawPosting]:
+        # ``posted_since`` is deliberately ignored: this endpoint returns the
+        # description in the same bulk response, so there is no per-job fetch
+        # to skip. The ingest layer applies the freshness window afterwards
+        # (app/ingest/freshness.py), which keeps the stored corpus and
+        # ``last_seen_at`` complete. See AtsProvider.fetch_postings.
         postings_url = _resolve_postings_url(company)
         if not postings_url:
             return []

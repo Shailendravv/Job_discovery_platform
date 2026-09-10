@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
 
+    # ── Job Discovery ────────────────────────────────────────────────────
+    # Default recency window for a discovery session — "only jobs posted in
+    # the last 24 hours". Parsed by app.ingest.time_util.parse_duration, so
+    # "24h" / "48h" / "7d" / "30m" all work. Callers (the API body, the
+    # jobctl --since flag) may override it per run.
+    DISCOVERY_WINDOW: str = "24h"
+
     LOG_LEVEL: str = "INFO"
 
     model_config = {

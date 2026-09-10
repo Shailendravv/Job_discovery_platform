@@ -183,10 +183,23 @@ def _mock_db(docs):
     cursor = MagicMock()
     cursor.to_list = AsyncMock(return_value=docs)
     db.postings.find.return_value = cursor
-    db.postings.update_one = AsyncMock()
+    db.postings.bulk_write = AsyncMock()
     db.prefilter_runs = MagicMock()
     db.prefilter_runs.insert_one = AsyncMock()
     return db
+
+
+def _written_sets(db) -> dict:
+    """``{posting_id: $set payload}`` from the single bulk_write the stage
+    issues. run_prefilter batches its classifications into one unordered
+    bulk_write rather than awaiting an update per document, so the
+    assertions read the operations out of that call."""
+    assert db.postings.bulk_write.await_count == 1
+    operations = db.postings.bulk_write.await_args.args[0]
+    return {
+        op._filter["_id"]: op._doc["$set"]
+        for op in operations
+    }
 
 
 def _mixed_batch() -> list[dict]:
@@ -247,7 +260,7 @@ async def test_run_prefilter_writes_status_and_reason_back_to_postings():
 
     await run_prefilter(db, config)
 
-    calls = {c.args[0]["_id"]: c.args[1]["$set"] for c in db.postings.update_one.await_args_list}
+    calls = _written_sets(db)
     assert calls["x" * 64]["prefiltered"] is True
     assert calls["x" * 64]["prefilter_status"] == "hard_filter"
     assert calls["y" * 64]["prefilter_status"] == "passed"
@@ -272,5 +285,5 @@ async def test_run_prefilter_dry_run_computes_counts_without_writing():
 
     assert result.hard_filter_rejected == 1
     assert result.passed == 1
-    db.postings.update_one.assert_not_awaited()
+    db.postings.bulk_write.assert_not_awaited()
     db.prefilter_runs.insert_one.assert_not_awaited()

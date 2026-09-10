@@ -7,12 +7,14 @@ Keep this list alphabetical by file name. Every doc file in this directory must 
 | File | Covers (source paths) | Status | Last verified |
 |---|---|---|---|---|
 | ats_optimization.md | backend/app/services/ats_keywords.py, backend/app/services/ats_scoring.py, backend/app/services/ats_location.py, backend/app/services/html_renderer.py, backend/templates/cv-template.html, backend/static/fonts/ | active | 2026-07-01 |
+| discovery.md | backend/app/ingest/freshness.py, backend/app/ingest/role_match.py, backend/app/ingest/runner.py, backend/app/api/v1/postings.py, backend/app/models/posting.py, backend/migrations/016_discovery_search_indexes.py, frontend/src/features/discovery/DiscoveryView.tsx | active | 2026-09-08 |
 | ingest.md | backend/app/ingest/, backend/jobctl/, backend/config/ats_companies.yml, backend/migrations/012_add_postings_collection.py, backend/app/agents/ats_providers/ | active | 2026-09-07 |
 | judging.md | backend/app/ingest/query.py, backend/app/ingest/ids.py, backend/app/ingest/format.py, backend/app/ingest/verdicts.py, backend/app/ingest/profile_store.py, backend/migrations/013_add_verdicts_collection.py, backend/jobctl/__main__.py, .claude/commands/nightly.md, .claude/commands/calibrate.md | active | 2026-09-07 |
 | llm.md | backend/app/services/llm/, backend/app/core/llm.py, backend/app/core/config.py (LLM settings) | active | 2026-09-07 |
 | payments-refunds.md | backend/payments/refunds/ | active | 2026-06-01 |
 | prefilter.md | backend/app/ingest/prefilter.py, backend/config/prefilter.yml, backend/migrations/014_add_prefilter_fields.py, backend/app/ingest/runner.py, backend/app/ingest/query.py, backend/app/ingest/store.py, backend/app/ingest/models.py | active | 2026-09-07 |
 | resume.md | backend/app/api/v1/resumes.py, backend/app/models/resume.py, backend/app/services/db_service.py | active | 2026-06-28 |
+| scoring.md | backend/app/ingest/scoring.py, backend/config/scoring.yml, backend/jobctl/__main__.py (score commands), backend/app/ingest/verdicts.py | active | 2026-09-08 |
 | tailor_structured.md | backend/app/api/v1/resumes.py, backend/app/services/structured_tailor.py, backend/app/services/pii_service.py, backend/app/services/llm/, backend/app/services/cover_letter.py, backend/app/services/html_service.py, backend/app/services/cloudinary_service.py, backend/app/services/db_service.py, backend/app/models/resume.py | active | 2026-06-28 |
 
 ## Rules for this file

@@ -22,6 +22,8 @@ from typing import Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.ingest.role_match import build_title_query
+
 DEFAULT_LIST_LIMIT = 40
 DEFAULT_NEXT_LIMIT = 25
 DEFAULT_SHORTLIST_LIMIT = 50
@@ -37,6 +39,10 @@ class PostingFilter:
     since: Optional[timedelta] = None   # first_seen_at >= now - since
     include_duplicates: bool = False    # duplicate_of postings are excluded by default
     prefilter_status: Optional[str] = None  # None = don't filter on prefilter outcome (milestone 3)
+
+    # Job Discovery (frontend) filters — both deterministic, no LLM.
+    posted_since: Optional[timedelta] = None  # effective posted date >= now - posted_since
+    role_query: Optional[str] = None          # free-text role, matched against title_normalized
 
 
 def build_query(filters: PostingFilter, *, now: Optional[datetime] = None) -> dict:
@@ -55,6 +61,27 @@ def build_query(filters: PostingFilter, *, now: Optional[datetime] = None) -> di
     if filters.since is not None:
         reference = now or datetime.now(timezone.utc)
         query["first_seen_at"] = {"$gte": reference - filters.since}
+
+    if filters.posted_since is not None:
+        # "Posted in the last 24 hours", with the documented fallback: use
+        # posted_at when the provider gave us one, else first_seen_at.
+        # store.py drops None values from its $set, so a dateless posting has
+        # no posted_at *field* at all — Mongo's {"posted_at": None} matches
+        # both missing and explicitly-null, which is exactly what we want.
+        reference = now or datetime.now(timezone.utc)
+        cutoff = reference - filters.posted_since
+        query["$or"] = [
+            {"posted_at": {"$gte": cutoff}},
+            {"posted_at": None, "first_seen_at": {"$gte": cutoff}},
+        ]
+
+    if filters.role_query is not None:
+        title_clause = build_title_query(filters.role_query)
+        # A query of only stopwords yields no clause — that's "no role
+        # filter", not "match nothing".
+        if title_clause is not None:
+            query["title_normalized"] = title_clause
+
     if not filters.include_duplicates:
         query["duplicate_of"] = None
 

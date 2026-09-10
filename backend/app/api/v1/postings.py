@@ -2,10 +2,12 @@ import logging
 import re
 from datetime import timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Query
 
 from app.api.deps import get_db
+from app.core.config import settings
 from app.core.database import get_database
+from app.ingest.freshness import resolve_window
 from app.ingest.models import Posting
 from app.ingest.query import (
     DEFAULT_SHORTLIST_LIMIT,
@@ -15,9 +17,12 @@ from app.ingest.query import (
     list_postings,
     shortlist_postings,
 )
-from app.ingest.runner import run_ingest
+from app.ingest.runner import mark_run_failed, run_ingest
 from app.models.posting import (
     ActiveResumeInfo,
+    IngestRunStatus,
+    IngestStage,
+    IngestTriggerRequest,
     IngestTriggerResponse,
     PostingDetailResponse,
     PostingListResponse,
@@ -59,15 +64,46 @@ async def get_postings(
     prefilter_status: str | None = Query(
         "passed", description="Filter by prefilter outcome. Pass empty to disable."
     ),
+    q: str | None = Query(
+        None,
+        description=(
+            "Role search, e.g. 'backend engineer'. Deterministic token match "
+            "against the posting title, with a fixed synonym table "
+            "(app/ingest/role_match.py) - no LLM, no ranking."
+        ),
+    ),
+    posted_within: str | None = Query(
+        None,
+        description=(
+            "Only postings posted within this window, e.g. '24h', '48h', '7d'. "
+            "Judged on posted_at, falling back to first_seen_at when the "
+            "provider supplied no date. This is what the Job Discovery page "
+            "sends; leave unset for the Dashboard's since_days behaviour."
+        ),
+    ),
     db=Depends(get_db),
 ):
-    """The 200-latest read the frontend polls: most recent postings that
-    cleared the prefilter, newest first, excluding near-duplicates."""
+    """The latest read the frontend polls: most recent postings that cleared
+    the prefilter, newest first, excluding near-duplicates.
+
+    Two independent windows, deliberately: ``since_days`` bounds when we
+    *first saw* a posting (the Dashboard's backlog view), while
+    ``posted_within`` bounds when it was *posted* (the Discovery view's
+    "last 24 hours" promise). The Discovery page sends ``posted_within`` and
+    widens ``since_days``, because a posting published an hour ago may well
+    have been sitting in our corpus for a fortnight."""
+    try:
+        posted_since = resolve_window(posted_within) if posted_within else None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
     filters = PostingFilter(
         provider=provider,
         org=org,
         prefilter_status=prefilter_status or None,
         since=timedelta(days=since_days),
+        posted_since=posted_since,
+        role_query=q,
     )
     docs = await list_postings(
         db, filters, limit=limit, sort_field="posted_at", sort_direction=-1
@@ -105,30 +141,96 @@ async def get_shortlist(
 
 
 @router.post("/ingest", response_model=IngestTriggerResponse, status_code=202)
-async def trigger_ingest(background_tasks: BackgroundTasks):
-    """Kick off an ATS ingest run in the background and return immediately.
+async def trigger_ingest(
+    background_tasks: BackgroundTasks,
+    request: IngestTriggerRequest | None = Body(None),
+):
+    """Kick off a Job Discovery run in the background and return immediately.
 
     Mirrors ``jobctl ingest`` (app/ingest/runner.run_ingest) — never runs
-    inline on the request, unlike the old /search endpoint, which is
-    exactly what made that endpoint hang for hours. Poll ingest_runs (or
-    GET /api/v1/postings once it lands) for progress."""
+    inline on the request, unlike the old /search endpoint, which is exactly
+    what made that endpoint hang for hours. Poll
+    ``GET /api/v1/postings/ingest/{run_id}`` for live progress.
+
+    The body is optional: ``POST /ingest`` with no body still starts a full,
+    unscoped run, which is what the nightly loop and any pre-existing caller
+    expects."""
     import uuid
 
+    request = request or IngestTriggerRequest()
     run_id = uuid.uuid4().hex[:12]
+
+    window_label = request.window or settings.DISCOVERY_WINDOW
+    try:
+        window = resolve_window(window_label)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     async def _run():
         db = get_database()
         try:
-            result = await run_ingest(db, run_id=run_id)
-            log.info(
-                "[ingest:background] run_id=%s sources_ok=%d sources_error=%d inserted=%d updated=%d",
-                run_id, result.sources_ok, result.sources_error, result.inserted, result.updated,
+            result = await run_ingest(
+                db,
+                run_id=run_id,
+                role=request.role,
+                window=window,
+                window_label=window_label,
+                source_filter=request.source,
+                org_filter=request.org,
             )
-        except Exception:
+            log.info(
+                "[ingest:background] run_id=%s role=%r window=%s sources_ok=%d "
+                "sources_error=%d fetched=%d fresh=%d inserted=%d updated=%d elapsed=%.1fs",
+                run_id, request.role, window_label, result.sources_ok, result.sources_error,
+                result.postings_fetched, result.postings_fresh, result.inserted,
+                result.updated, result.elapsed_ms / 1000.0,
+            )
+        except Exception as e:
             log.exception("[ingest:background] run_id=%s failed", run_id)
+            # Without this the run document is stuck on "running" and the
+            # Discovery page polls it forever.
+            await mark_run_failed(db, run_id, str(e))
 
     background_tasks.add_task(_run)
     return IngestTriggerResponse(run_id=run_id, status="started")
+
+
+@router.get("/ingest/{run_id}", response_model=IngestRunStatus)
+async def get_ingest_run(run_id: str, db=Depends(get_db)):
+    """Live progress for one discovery run.
+
+    ``run_ingest`` writes the run document when the run *starts* and updates
+    it as each stage lands, so this returns meaningful stage timings while
+    the run is still in flight — that is what the Discovery page renders."""
+    doc = await db.ingest_runs.find_one({"_id": run_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"No discovery run with id {run_id}.")
+
+    def _iso(value):
+        return value.isoformat() if value else None
+
+    return IngestRunStatus(
+        run_id=doc["_id"],
+        # A run recorded before this endpoint existed has no status field;
+        # it finished long ago, so report it as completed rather than
+        # leaving a poller hanging on a missing key.
+        status=doc.get("status") or ("completed" if doc.get("finished_at") else "running"),
+        started_at=_iso(doc.get("started_at")),
+        finished_at=_iso(doc.get("finished_at")),
+        elapsed_ms=doc.get("elapsed_ms") or 0.0,
+        role=doc.get("role"),
+        window=doc.get("window"),
+        stages=[IngestStage(**stage) for stage in doc.get("stages") or []],
+        sources_total=doc.get("sources_total") or 0,
+        sources_ok=doc.get("sources_ok") or 0,
+        sources_error=doc.get("sources_error") or 0,
+        postings_fetched=doc.get("postings_fetched") or 0,
+        postings_normalized=doc.get("postings_normalized") or 0,
+        postings_fresh=doc.get("postings_fresh") or 0,
+        inserted=doc.get("inserted") or 0,
+        updated=doc.get("updated") or 0,
+        error=doc.get("error"),
+    )
 
 
 @router.get("/{posting_id}", response_model=PostingDetailResponse, **BY_FIELD_NAME)

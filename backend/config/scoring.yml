@@ -1,0 +1,115 @@
+# backend/config/scoring.yml — deterministic judging (app/ingest/scoring.py).
+#
+# This is the stage that decides which postings a Claude Code judging session
+# ever sees. Everything the prefilter passed gets scored 1-10 here by rules
+# alone; only the middle band is handed to the agent.
+#
+#   score >= bands.auto_apply_min  -> verdict "apply", written automatically
+#   score <= bands.auto_skip_max   -> verdict "skip",  written automatically
+#   anything between               -> stays unjudged for `jobctl next`
+#
+# *** SAMPLE VALUES — TUNE THESE TO YOUR OWN RESUME/PREFERENCES ***
+# They intentionally mirror config/prefilter.yml so the two stages agree
+# about what a good posting looks like. Widen the bands (raise
+# auto_apply_min, lower auto_skip_max) to send more to the agent; narrow
+# them to send less.
+#
+# Preview the effect of an edit without writing any verdicts:
+#     jobctl score run --dry-run --json
+
+# Every posting starts here and moves up or down. Deliberately below
+# mid-scale: a posting with nothing to say about it should have to earn
+# its way out of the needs_review band on positive evidence, not start
+# halfway to an automatic "apply".
+base_score: 4.0
+
+skills:
+  # Skills you actually have and want to be hired for (backend/config/resume.txt.txt).
+  core:
+    - react
+    - node
+    - fastapi
+    - python
+    - typescript
+    - mongodb
+    - postgresql
+  # Nice-to-haves — real signal, but a miss is not a gap.
+  bonus:
+    - docker
+    - aws
+    - next.js
+    - redux
+    - langchain
+    - openai
+    - express
+  core_weight: 3.0
+  bonus_weight: 1.0
+  # Cap, so a keyword-stuffed description cannot reach auto-apply on
+  # skill matches alone.
+  max_points: 4.0
+
+seniority:
+  # Case-insensitive regexes against the title. Previously tuned for a
+  # junior/associate candidate, with "lead" even counted as too_senior —
+  # that penalized the exact title being targeted. Replaced to match a
+  # Full Stack Lead with 4+ years (resume: backend/config/resume.txt.txt).
+  preferred:
+    - "\\blead\\b"
+    - "\\bsenior\\b"
+    - "\\bsr\\.?\\b"
+    - "\\bfull[\\s-]?stack\\b"
+    - "\\bsoftware engineer\\b"
+    - "\\bsde\\b"
+  too_senior:
+    - "\\bstaff\\b"
+    - "\\bprincipal\\b"
+    - "\\bdirector\\b"
+    - "\\bvp\\b"
+    - "\\bhead of\\b"
+  preferred_points: 1.5
+  too_senior_penalty: 3.0
+
+location:
+  # Substring match against the posting's location, same shape as
+  # prefilter.yml's allowed_locations. Union of every Indian hub this
+  # sample data had scattered across the two config files, plus remote —
+  # kept in sync with prefilter.yml's allowed_locations below.
+  allowed:
+    - remote
+    - noida
+    - gurugram
+    - greater noida
+    - india
+  remote_ok: true
+  # Worth little on purpose: config/prefilter.yml already rejects
+  # disallowed locations outright, so a location that merely passes is
+  # table stakes. A miss still costs, because a posting can reach this
+  # stage through the remote_ok escape hatch.
+  match_points: 0.5
+  miss_penalty: 2.5
+
+experience:
+  # Years-of-experience ceiling, read out of the description by the same
+  # regex the prefilter uses (prefilter.extract_years_required). 4+ years
+  # actual, targeting Lead postings that commonly ask for 5-6 — kept in
+  # sync with prefilter.yml's max_years_experience.
+  max_years: 6
+  within_points: 1.0
+  per_year_over_penalty: 1.0
+  max_penalty: 4.0
+
+bands:
+  # A posting scoring 8+ is written as "apply" with no agent involvement;
+  # 3 or below is written as "skip". 4-7 is the band where a human-quality
+  # judgement actually earns its cost.
+  auto_apply_min: 8
+  auto_skip_max: 3
+
+  # A gate, not a weight. Seniority, location and years-of-experience are
+  # weak or table-stakes signals and together can carry a posting to
+  # auto_apply_min with no skill overlap at all — on the live registry an
+  # "Associate Manager, Strategic Partnerships" scored 8/10 that way.
+  # Below this many `skills.core` hits a posting is held at needs_review
+  # however high it scores. Auto-skip is not gated: a posting with no skill
+  # overlap being skipped is the right outcome.
+  min_core_skills_for_auto_apply: 2
