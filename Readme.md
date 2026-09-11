@@ -100,3 +100,4 @@ cat logs/mcp-browse.log   # MCP Browse server
 ```
 
 Or refer to the detailed docs in [`docs/`](docs/) for architecture decisions and setup guides.
+<!-- Test -->
